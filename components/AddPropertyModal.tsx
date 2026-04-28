@@ -151,10 +151,20 @@ export function AddPropertyModal({
             if (gj.latitude != null && gj.longitude != null) {
               setLat(String(gj.latitude));
               setLng(String(gj.longitude));
+            } else {
+              setInfo(
+                "Extracted from screenshot. Address couldn't be located automatically — click 'Find on map' to pin the location before saving.",
+              );
             }
+          } else {
+            setInfo(
+              "Extracted from screenshot. Click 'Find on map' to locate the address on the map before saving.",
+            );
           }
         } catch {
-          // Non-fatal — user can geocode manually.
+          setInfo(
+            "Extracted from screenshot. Click 'Find on map' to locate the address on the map before saving.",
+          );
         }
       }
     } catch (e) {
@@ -335,10 +345,10 @@ export function AddPropertyModal({
 
         {step === "review" && (
           <div className="space-y-3">
-            {(data?.geocode_confidence === "low" || !lat || !lng) && (
+            {(!lat || !lng) && (
               <div className="text-sm text-amber-300 bg-amber-950/30 border border-amber-900 rounded px-3 py-2">
-                Geocode confidence is low or missing. Drag the pin to the
-                correct location.
+                Location not set. Click &ldquo;Find on map&rdquo; or drag the
+                pin to set the property location before saving.
               </div>
             )}
             <Field label="Address">
@@ -388,20 +398,6 @@ export function AddPropertyModal({
                 />
               </Field>
             </div>
-            <Field label="Latitude / Longitude">
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  value={lat}
-                  onChange={(e) => setLat(e.target.value)}
-                  className={inputCls}
-                />
-                <input
-                  value={lng}
-                  onChange={(e) => setLng(e.target.value)}
-                  className={inputCls}
-                />
-              </div>
-            </Field>
             <ManualGeoPicker
               lat={parseFloat(lat) || 29.76}
               lng={parseFloat(lng) || -95.37}
