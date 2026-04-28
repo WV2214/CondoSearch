@@ -12,7 +12,7 @@ export type TourStatus = z.infer<typeof tourStatusSchema>;
 export const propertySchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  listing_url: z.string().url(),
+  listing_urls: z.array(z.string().url()),
   address: z.string().min(1),
   latitude: z.number(),
   longitude: z.number(),
@@ -33,7 +33,7 @@ export type Property = z.infer<typeof propertySchema>;
 
 export const propertyInsertSchema = z
   .object({
-    listing_url: z.string().url(),
+    listing_urls: z.array(z.string().url()),
     address: z.string().min(1),
     latitude: z.number(),
     longitude: z.number(),
@@ -43,6 +43,7 @@ export const propertyInsertSchema = z
     square_feet: z.number().int().nullable(),
     photo_path: z.string().nullable(),
     photo_source_url: z.string().url().nullable().optional(),
+    pros: z.array(z.string()).optional(),
   });
 export type PropertyInsert = z.infer<typeof propertyInsertSchema>;
 

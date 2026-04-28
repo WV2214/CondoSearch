@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { geocodeAddress } from "@/lib/geocode";
+import { geocodeAddressMulti } from "@/lib/geocode";
 
 const bodySchema = z.object({ address: z.string().min(1) });
 
@@ -19,13 +19,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
 
-  const result = await geocodeAddress(parsed.data.address);
-  if (!result) {
+  const candidates = await geocodeAddressMulti(parsed.data.address);
+  if (candidates.length === 0) {
     return NextResponse.json({
       latitude: null,
       longitude: null,
       confidence: "none",
+      displayName: null,
+      candidates: [],
     });
   }
-  return NextResponse.json(result);
+  const top = candidates[0];
+  return NextResponse.json({
+    latitude: top.latitude,
+    longitude: top.longitude,
+    confidence: top.confidence,
+    displayName: top.displayName,
+    candidates,
+  });
 }

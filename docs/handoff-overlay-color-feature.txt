@@ -1,0 +1,97 @@
+HANDOFF: Property overlay-color sampling feature
+
+Project: CondoSearch
+Working directory: C:\Users\perry\OneDrive\Desktop\CondoSearch
+
+GOAL
+
+Sample the crime-overlay color at each property's lat/lng and display it as a small colored circle (or set of circles) on the property's details view. The user wants this to happen automatically right after they click "Save property" in the Add Property modal, and to be visible whenever they view the property afterwards.
+
+OVERLAY FORMAT (already determined)
+
+The overlay is a single raster PNG, not GeoJSON polygons. This is the simpler of the two cases.
+
+    File on disk:     CondoSearch/public/overlays/crimegrade-houston.png
+    Served URL:       /overlays/crimegrade-houston.png
+    Bounds (lat/lng): [29.677244, -95.660312, 29.832866, -95.349284]
+                      stored as [southLat, westLng, northLat, eastLng]
+    Config file:      CondoSearch/lib/overlay-config.ts (CRIME_OVERLAY object)
+
+The overlay is rendered with react-leaflet's ImageOverlay in CondoSearch/components/CrimeOverlay.tsx. The bounds may be edited at runtime via OverlayEditor (writes to localStorage) but the file constant is the canonical default. The bounds in localStorage may not be available server-side, so for sampling, prefer reading the constant unless we explicitly want to honor a per-user override.
+
+SAMPLING APPROACH (recommended)
+
+Since the overlay is a single image with known geographic bounds and an equirectangular projection at the Houston scale (close enough), color sampling is just:
+
+    1. Compute pixel coordinates from lat/lng using a linear interpolation between the bounds and the image's pixel dimensions.
+
+           u = (lng - westLng) / (eastLng - westLng)
+           v = (northLat - lat) / (northLat - southLat)
+           pixelX = u * imageWidth
+           pixelY = v * imageHeight
+
+       Note: y axis flips because pixel rows go top-to-bottom while latitude increases northward.
+
+    2. Draw the image to an offscreen HTMLCanvasElement once and read pixel RGBA via ctx.getImageData(pixelX, pixelY, 1, 1).
+
+    3. Return a hex color string. Optionally, average a small neighborhood (e.g. 3x3) to reduce sensitivity to pixel-level artifacts in the heatmap.
+
+Where to do the sampling: Either client-side in the browser (simpler, no server cost, but requires the image to be loaded) or server-side at save time (using @napi-rs/canvas or sharp to read the pixel and persist the color into the row). I recommend client-side first because:
+
+    The image is already loaded for the map view.
+    No new server dependency.
+    No DB column needed initially. Compute on the fly in the details view.
+
+If we later want the color to be queryable or shown in lists without the overlay being loaded, add an overlay_color text column and persist the sampled value at save time.
+
+WHAT TO BUILD (suggested order)
+
+1. New utility: CondoSearch/lib/overlay-sample.ts
+
+       export async function sampleOverlayColor(
+         lat: number,
+         lng: number,
+         imageUrl: string,
+         bounds: Bounds,
+       ): Promise<string | null>
+
+   Implementation: lazy-load the image (cache the HTMLImageElement and a backing canvas in module scope so subsequent calls are instant), reject if lat/lng falls outside bounds, return a hex color or null.
+
+2. New component: CondoSearch/components/OverlayColorSwatch.tsx
+
+       Small inline circle (8-12 px) rendered with the sampled hex color. Tooltip on hover showing the hex value. If sampling returns null (out of bounds, or pixel is fully transparent), render a hollow circle or skip rendering entirely.
+
+3. Wire into CondoSearch/components/PropertyEditor.tsx
+
+       The details page renders PropertyEditor (see app/properties/[id]/page.tsx). Add the swatch near the address or the price block. Trigger sampling in a useEffect when the component mounts using p.latitude / p.longitude.
+
+4. Optionally show the swatch in the sidebar list and on the map pin popups (Sidebar.tsx and PropertyPins.tsx) for at-a-glance comparison across properties.
+
+RECENT WORK CONTEXT
+
+The chat that preceded this handoff fixed the property save flow:
+
+    Geocoding now strips unit/apt designators and retries when Nominatim returns no result (see lib/geocode.ts).
+    The Add Property modal no longer shows raw lat/lng inputs to the user; the map pin handles that.
+    The schema migrated from a single listing_url column to a listing_urls text[] array. Migration file: CondoSearch/supabase/migrations/0002_listing_urls_array.sql. The user needs to apply this via the Supabase SQL editor or supabase db push if not already done. Verify the column exists before testing the save flow end-to-end.
+    The Add Property modal now has a multi-URL input with an "Add another URL" button on the review step.
+
+OPEN QUESTIONS FOR THE USER
+
+    Multiple overlays in the future, or just the single Houston crime overlay? If multiple, the swatch UI should support a row of circles, one per overlay, with the overlay name in the tooltip. Easier to design that in from the start.
+
+    Is "small circle that changes color" referring to one circle per property (the sampled color), or an animation cycling through several colors? Re-reading the request, the most natural interpretation is one circle per overlay showing that overlay's color at the property's location, where "different colors" describes how it differs across properties, not animation. Confirm before building anything fancy.
+
+    Should the sampled color be persisted in the database? Tradeoff: persisting lets the color show in list views without loading the overlay image, but it gets stale if the overlay PNG is replaced. Lazy client-side sampling is simpler and always current. Default to client-side unless the user wants list-view swatches.
+
+KEY FILES TO READ FIRST IN THE NEW CHAT
+
+    CondoSearch/components/CrimeOverlay.tsx          how the overlay renders today
+    CondoSearch/lib/overlay-config.ts                bounds and image URL
+    CondoSearch/components/PropertyEditor.tsx        details view, where the swatch goes
+    CondoSearch/app/properties/[id]/page.tsx         how the details page loads the property
+    CondoSearch/components/OverlayEditor.tsx         how runtime bound edits work (skim only)
+
+ESTIMATE
+
+Roughly 30-45 minutes of focused work for the client-side, single-overlay version. Add 15 minutes if persisting to a new overlay_color column with a migration.

@@ -31,8 +31,14 @@ const extractionSchema = {
       type: ["number", "null"],
       description: "Square footage as an integer. Null if not visible.",
     },
+    amenities: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "Concise property feature/amenity labels found anywhere on the page — Highlights bullets, About-This-Home descriptions, and any other body text. Examples: 'Washer/dryer in unit', 'Fireplace', 'Community pool', '1-car detached garage', 'Cathedral ceilings', 'Granite countertops'. Each entry should be 2-6 words, sentence-case, with no trailing punctuation. Include both positive features (pool, garage) and notable absences only if the listing explicitly says they're missing (e.g. 'No washer/dryer hookup'). Empty array if nothing is found.",
+    },
   },
-  required: ["address", "price", "beds", "baths", "square_feet"],
+  required: ["address", "price", "beds", "baths", "square_feet", "amenities"],
   additionalProperties: false,
 } as const;
 
@@ -104,7 +110,7 @@ export async function POST(req: Request) {
           },
           {
             type: "text",
-            text: "This screenshot is from a real estate listing. Extract the property details into the structured output. Use null for any field you cannot read clearly — do not guess.",
+            text: "This screenshot is from a real estate listing. Extract the property details into the structured output. Use null for any field you cannot read clearly — do not guess. For amenities, scan all visible body text including Highlights bullets and any descriptive paragraphs. Mention washer/dryer presence if discoverable.",
           },
         ],
       },
@@ -125,6 +131,7 @@ export async function POST(req: Request) {
     beds: number | null;
     baths: number | null;
     square_feet: number | null;
+    amenities: string[];
   };
   try {
     parsed = JSON.parse(textBlock.text);

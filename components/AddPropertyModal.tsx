@@ -21,6 +21,21 @@ interface ScrapeResp {
   geocode_confidence: "high" | "low" | "none";
 }
 
+interface GeocodeCandidate {
+  latitude: number;
+  longitude: number;
+  confidence: "high" | "low";
+  displayName: string;
+}
+
+interface GeocodeResp {
+  latitude: number | null;
+  longitude: number | null;
+  confidence: "high" | "low" | "none";
+  displayName: string | null;
+  candidates: GeocodeCandidate[];
+}
+
 const inputCls =
   "w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500";
 
@@ -46,6 +61,12 @@ export function AddPropertyModal({
   const [sqft, setSqft] = useState<string>("");
   const [lat, setLat] = useState<string>("");
   const [lng, setLng] = useState<string>("");
+  const [listingUrls, setListingUrls] = useState<string[]>([""]);
+  const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
+  const [amenities, setAmenities] = useState<string[]>([]);
+  const [selectedAmenities, setSelectedAmenities] = useState<Set<string>>(
+    new Set(),
+  );
 
   const safeJson = async (res: Response): Promise<Record<string, unknown>> => {
     const text = await res.text();
@@ -82,6 +103,7 @@ export function AddPropertyModal({
       setSqft(d.scraped.square_feet?.toString() ?? "");
       setLat(d.latitude?.toString() ?? "");
       setLng(d.longitude?.toString() ?? "");
+      if (url.trim()) setListingUrls([url.trim()]);
 
       const allNull =
         !d.scraped.address &&
@@ -128,18 +150,20 @@ export function AddPropertyModal({
         beds: number | null;
         baths: number | null;
         square_feet: number | null;
+        amenities?: string[];
       };
       if (x.address) setAddress(x.address);
       if (x.price != null) setPrice(String(x.price));
       if (x.beds != null) setBeds(String(x.beds));
       if (x.baths != null) setBaths(String(x.baths));
       if (x.square_feet != null) setSqft(String(x.square_feet));
-      setInfo(
-        "Extracted from screenshot. Review the fields, then either click 'Find on map' to geocode the address or drag the pin manually before saving.",
-      );
+      const found = Array.isArray(x.amenities) ? x.amenities : [];
+      setAmenities(found);
+      setSelectedAmenities(new Set(found));
       setStep("review");
 
       if (x.address) {
+        setInfo("Locating address on map...");
         try {
           const g = await fetch("/api/geocode", {
             method: "POST",
@@ -147,25 +171,35 @@ export function AddPropertyModal({
             body: JSON.stringify({ address: x.address }),
           });
           if (g.ok) {
-            const gj = await g.json();
+            const gj = (await g.json()) as GeocodeResp;
+            setCandidates(gj.candidates ?? []);
             if (gj.latitude != null && gj.longitude != null) {
               setLat(String(gj.latitude));
               setLng(String(gj.longitude));
+              if ((gj.candidates?.length ?? 0) > 1) {
+                setInfo(
+                  `Extracted from screenshot. Multiple matches found — pick the right one in the address dropdown if needed.`,
+                );
+              } else {
+                setInfo("Extracted from screenshot. Review the fields and save.");
+              }
             } else {
               setInfo(
-                "Extracted from screenshot. Address couldn't be located automatically — click 'Find on map' to pin the location before saving.",
+                "Extracted from screenshot. Address couldn't be located — click 'Find on map' or drag the pin to set the location.",
               );
             }
           } else {
             setInfo(
-              "Extracted from screenshot. Click 'Find on map' to locate the address on the map before saving.",
+              "Extracted from screenshot. Click 'Find on map' to locate the address before saving.",
             );
           }
         } catch {
           setInfo(
-            "Extracted from screenshot. Click 'Find on map' to locate the address on the map before saving.",
+            "Extracted from screenshot. Click 'Find on map' to locate the address before saving.",
           );
         }
+      } else {
+        setInfo("Extracted from screenshot. Review the fields before saving.");
       }
     } catch (e) {
       setError((e as Error).message);
@@ -208,11 +242,8 @@ export function AddPropertyModal({
         body: JSON.stringify({ address }),
       });
       if (!res.ok) throw new Error("geocode failed");
-      const j = (await res.json()) as {
-        latitude: number | null;
-        longitude: number | null;
-        confidence: "high" | "low" | "none";
-      };
+      const j = (await res.json()) as GeocodeResp;
+      setCandidates(j.candidates ?? []);
       if (j.latitude == null || j.longitude == null) {
         setError(
           "Couldn't find that address. Drag the pin on the map to set the location.",
@@ -220,12 +251,25 @@ export function AddPropertyModal({
       } else {
         setLat(j.latitude.toString());
         setLng(j.longitude.toString());
+        if ((j.candidates?.length ?? 0) > 1) {
+          setInfo(
+            "Multiple matches found. Pick the correct one from the dropdown below the address.",
+          );
+        }
       }
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setGeocoding(false);
     }
+  };
+
+  const pickCandidate = (idx: number) => {
+    const c = candidates[idx];
+    if (!c) return;
+    setLat(c.latitude.toString());
+    setLng(c.longitude.toString());
+    setInfo(null);
   };
 
   const save = async () => {
@@ -235,13 +279,29 @@ export function AddPropertyModal({
       setError("Address and a valid lat/lng are required");
       return;
     }
+    const cleanedUrls = listingUrls.map((u) => u.trim()).filter(Boolean);
+    const invalidUrl = cleanedUrls.find((u) => {
+      try {
+        new URL(u);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    if (invalidUrl) {
+      setError(`Not a valid URL: ${invalidUrl}`);
+      return;
+    }
     setBusy(true);
     try {
+      const prosFromAmenities = amenities.filter((a) =>
+        selectedAmenities.has(a),
+      );
       const res = await fetch("/api/properties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          listing_url: url,
+          listing_urls: cleanedUrls,
           address,
           latitude: latN,
           longitude: lngN,
@@ -251,6 +311,9 @@ export function AddPropertyModal({
           square_feet: sqft ? parseInt(sqft, 10) : null,
           photo_path: null,
           photo_source_url: data?.scraped.photo_url ?? null,
+          ...(prosFromAmenities.length > 0
+            ? { pros: prosFromAmenities }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -305,7 +368,10 @@ export function AddPropertyModal({
                 {busy ? "Scraping..." : "Continue"}
               </button>
               <button
-                onClick={() => setStep("review")}
+                onClick={() => {
+                  if (url.trim()) setListingUrls([url.trim()]);
+                  setStep("review");
+                }}
                 className="flex-1 border border-zinc-700 rounded py-2 hover:bg-zinc-800"
               >
                 Skip and enter manually
@@ -355,7 +421,10 @@ export function AddPropertyModal({
               <div className="flex gap-2">
                 <input
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
+                  onChange={(e) => {
+                    setAddress(e.target.value);
+                    if (candidates.length) setCandidates([]);
+                  }}
                   className={inputCls}
                 />
                 <button
@@ -367,6 +436,34 @@ export function AddPropertyModal({
                   {geocoding ? "..." : "Find on map"}
                 </button>
               </div>
+              {candidates.length > 1 && (
+                <div className="mt-2">
+                  <div className="text-xs text-zinc-400 mb-1">
+                    {candidates.length} matches — pick the right one:
+                  </div>
+                  <select
+                    value={(() => {
+                      const idx = candidates.findIndex(
+                        (c) =>
+                          c.latitude.toFixed(4) ===
+                            (parseFloat(lat) || 0).toFixed(4) &&
+                          c.longitude.toFixed(4) ===
+                            (parseFloat(lng) || 0).toFixed(4),
+                      );
+                      return idx >= 0 ? String(idx) : "0";
+                    })()}
+                    onChange={(e) => pickCandidate(parseInt(e.target.value, 10))}
+                    className={inputCls}
+                  >
+                    {candidates.map((c, i) => (
+                      <option key={i} value={i}>
+                        {c.confidence === "high" ? "★ " : ""}
+                        {c.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Price ($/mo)">
@@ -398,6 +495,77 @@ export function AddPropertyModal({
                 />
               </Field>
             </div>
+            {amenities.length > 0 && (
+              <Field label={`Detected features (${amenities.length})`}>
+                <div className="space-y-1 bg-zinc-800/40 border border-zinc-700 rounded p-2">
+                  {amenities.map((a) => {
+                    const checked = selectedAmenities.has(a);
+                    return (
+                      <label
+                        key={a}
+                        className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-800 px-2 py-1 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            const next = new Set(selectedAmenities);
+                            if (next.has(a)) next.delete(a);
+                            else next.add(a);
+                            setSelectedAmenities(next);
+                          }}
+                          className="accent-zinc-300"
+                        />
+                        <span className={checked ? "text-zinc-100" : "text-zinc-500 line-through"}>
+                          {a}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="text-xs text-zinc-500 mt-1">
+                  Selected items become pros on the property after save.
+                </div>
+              </Field>
+            )}
+            <Field label="Listing URLs (optional)">
+              <div className="space-y-2">
+                {listingUrls.map((u, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input
+                      value={u}
+                      placeholder="https://..."
+                      onChange={(e) => {
+                        const next = [...listingUrls];
+                        next[i] = e.target.value;
+                        setListingUrls(next);
+                      }}
+                      className={inputCls}
+                    />
+                    {listingUrls.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setListingUrls(
+                            listingUrls.filter((_, j) => j !== i),
+                          )
+                        }
+                        className="shrink-0 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setListingUrls([...listingUrls, ""])}
+                  className="text-sm border border-zinc-700 rounded px-3 py-1 text-zinc-300 hover:bg-zinc-800"
+                >
+                  + Add another URL
+                </button>
+              </div>
+            </Field>
             <ManualGeoPicker
               lat={parseFloat(lat) || 29.76}
               lng={parseFloat(lng) || -95.37}
