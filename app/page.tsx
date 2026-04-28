@@ -1,8 +1,6 @@
-import dynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-
-const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
+import MapViewClient from "@/components/MapViewClient";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -10,5 +8,5 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  return <MapView />;
+  return <MapViewClient />;
 }
