@@ -41,62 +41,66 @@ export default function OverlaySetup() {
   const bounds = computeBounds(points, imgRef.current);
 
   return (
-    <main className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-4">Overlay Setup</h1>
-      <p className="mb-4 text-sm text-gray-600">
-        Click two reference points on the screenshot, entering each one&apos;s
-        real lat/lng. Two points are enough to compute bounds (Web Mercator
-        near a city is well-approximated as axis-aligned over ~30 miles).
-      </p>
-      <img
-        ref={imgRef}
-        src={CRIME_OVERLAY.imageUrl}
-        alt="Crime overlay"
-        onClick={onClick}
-        className="border max-w-full cursor-crosshair"
-      />
-      {pending && (
-        <div className="mt-4 p-4 border rounded space-y-2">
-          <div>
-            Pixel: ({pending.x.toFixed(0)}, {pending.y.toFixed(0)})
+    <main className="min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="p-6 max-w-4xl mx-auto">
+        <h1 className="text-2xl font-semibold mb-4">Overlay Setup</h1>
+        <p className="mb-4 text-sm text-zinc-400">
+          Click two reference points on the screenshot, entering each one&apos;s
+          real lat/lng. Two points are enough to compute bounds (Web Mercator
+          near a city is well-approximated as axis-aligned over ~30 miles).
+        </p>
+        <img
+          ref={imgRef}
+          src={CRIME_OVERLAY.imageUrl}
+          alt="Crime overlay"
+          onClick={onClick}
+          className="border border-zinc-800 max-w-full cursor-crosshair rounded"
+        />
+        {pending && (
+          <div className="mt-4 p-4 border border-zinc-800 rounded bg-zinc-900 space-y-2">
+            <div className="text-zinc-300">
+              Pixel: ({pending.x.toFixed(0)}, {pending.y.toFixed(0)})
+            </div>
+            <input
+              placeholder="Latitude"
+              value={latInput}
+              onChange={(e) => setLatInput(e.target.value)}
+              className="bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 rounded px-2 py-1 mr-2"
+            />
+            <input
+              placeholder="Longitude"
+              value={lngInput}
+              onChange={(e) => setLngInput(e.target.value)}
+              className="bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 rounded px-2 py-1 mr-2"
+            />
+            <button
+              onClick={confirm}
+              className="bg-zinc-100 text-zinc-900 rounded px-3 py-1 font-medium hover:bg-white"
+            >
+              Add point
+            </button>
           </div>
-          <input
-            placeholder="Latitude"
-            value={latInput}
-            onChange={(e) => setLatInput(e.target.value)}
-            className="border rounded px-2 py-1 mr-2"
-          />
-          <input
-            placeholder="Longitude"
-            value={lngInput}
-            onChange={(e) => setLngInput(e.target.value)}
-            className="border rounded px-2 py-1 mr-2"
-          />
-          <button
-            onClick={confirm}
-            className="bg-black text-white rounded px-3 py-1"
-          >
-            Add point
-          </button>
+        )}
+        <div className="mt-6">
+          <h2 className="font-semibold mb-2">
+            Points: {points.length}/2
+          </h2>
+          <ul className="text-sm text-zinc-400">
+            {points.map((p, i) => (
+              <li key={i}>
+                ({p.pxX.toFixed(0)}, {p.pxY.toFixed(0)}) → {p.lat}, {p.lng}
+              </li>
+            ))}
+          </ul>
         </div>
-      )}
-      <div className="mt-6">
-        <h2 className="font-semibold mb-2">Points: {points.length}/2</h2>
-        <ul className="text-sm">
-          {points.map((p, i) => (
-            <li key={i}>
-              ({p.pxX.toFixed(0)}, {p.pxY.toFixed(0)}) → {p.lat}, {p.lng}
-            </li>
-          ))}
-        </ul>
-      </div>
-      {bounds && (
-        <pre className="mt-6 bg-gray-100 p-4 rounded text-sm whitespace-pre-wrap">
+        {bounds && (
+          <pre className="mt-6 bg-zinc-900 border border-zinc-800 text-zinc-200 p-4 rounded text-sm whitespace-pre-wrap">
 {`Paste this into lib/overlay-config.ts as the bounds field:
 
 bounds: [${bounds.s.toFixed(6)}, ${bounds.w.toFixed(6)}, ${bounds.n.toFixed(6)}, ${bounds.e.toFixed(6)}] as [number, number, number, number],`}
-        </pre>
-      )}
+          </pre>
+        )}
+      </div>
     </main>
   );
 }

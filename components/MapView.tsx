@@ -59,7 +59,7 @@ export default function MapView() {
         </MapContainer>
         <Link
           href="/compare"
-          className="absolute top-4 left-4 z-[1000] bg-white shadow rounded px-3 py-2 text-sm"
+          className="absolute top-4 left-4 z-[1000] bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm hover:bg-zinc-800"
         >
           Compare
         </Link>
@@ -73,7 +73,7 @@ export default function MapView() {
                   : "auto",
             )
           }
-          className="absolute top-4 right-4 z-[1000] bg-white shadow rounded px-3 py-2 text-sm"
+          className="absolute top-4 right-4 z-[1000] bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm hover:bg-zinc-800"
         >
           Crime overlay: {overlayMode}
         </button>

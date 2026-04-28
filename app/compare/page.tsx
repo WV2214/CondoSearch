@@ -26,17 +26,20 @@ export default async function ComparePage() {
   const properties = (data ?? []) as Property[];
 
   return (
-    <main className="p-6">
+    <main className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
       <div className="flex justify-between mb-4">
         <h1 className="text-2xl font-semibold">Compare</h1>
-        <Link href="/" className="text-sm border rounded px-3 py-2">
+        <Link
+          href="/"
+          className="text-sm border border-zinc-700 rounded px-3 py-2 hover:bg-zinc-900"
+        >
           ← Back to map
         </Link>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded border border-zinc-800">
         <table className="min-w-full text-sm border-collapse">
           <thead>
-            <tr className="bg-gray-100 text-left">
+            <tr className="bg-zinc-900 text-left text-zinc-300">
               <th className="p-2">Photo</th>
               <th className="p-2">Address</th>
               <th className="p-2">Price</th>
@@ -50,7 +53,10 @@ export default async function ComparePage() {
           </thead>
           <tbody>
             {properties.map((p) => (
-              <tr key={p.id} className="border-t hover:bg-gray-50">
+              <tr
+                key={p.id}
+                className="border-t border-zinc-800 hover:bg-zinc-900"
+              >
                 <td className="p-2">
                   {p.photo_path ? (
                     <img
@@ -59,13 +65,13 @@ export default async function ComparePage() {
                       className="w-16 h-16 object-cover rounded"
                     />
                   ) : (
-                    <div className="w-16 h-16 bg-gray-200 rounded" />
+                    <div className="w-16 h-16 bg-zinc-800 rounded" />
                   )}
                 </td>
                 <td className="p-2">
                   <Link
                     href={`/properties/${p.id}`}
-                    className="hover:underline"
+                    className="hover:underline text-zinc-100"
                   >
                     {p.address}
                   </Link>
@@ -78,17 +84,17 @@ export default async function ComparePage() {
                 </td>
                 <td className="p-2">{p.square_feet ?? "—"}</td>
                 <td className="p-2">{STATUS_LABEL[p.tour_status]}</td>
-                <td className="p-2">
+                <td className="p-2 text-amber-300">
                   {p.star_rating ? "★".repeat(p.star_rating) : "—"}
                 </td>
-                <td className="p-2 text-green-700">
+                <td className="p-2 text-green-400">
                   <ul className="list-disc list-inside">
                     {p.pros.slice(0, 3).map((s, i) => (
                       <li key={i}>{s}</li>
                     ))}
                   </ul>
                 </td>
-                <td className="p-2 text-red-700">
+                <td className="p-2 text-red-400">
                   <ul className="list-disc list-inside">
                     {p.cons.slice(0, 3).map((s, i) => (
                       <li key={i}>{s}</li>

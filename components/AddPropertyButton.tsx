@@ -9,7 +9,7 @@ export function AddPropertyButton({ onSaved }: { onSaved: () => void }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="absolute bottom-6 right-6 z-[1000] bg-black text-white rounded-full w-14 h-14 text-2xl shadow-lg"
+        className="absolute bottom-6 right-6 z-[1000] bg-zinc-100 text-zinc-900 rounded-full w-14 h-14 text-2xl shadow-2xl hover:bg-white transition"
         aria-label="Add property"
       >
         +

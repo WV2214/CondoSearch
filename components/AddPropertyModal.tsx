@@ -21,6 +21,9 @@ interface ScrapeResp {
   geocode_confidence: "high" | "low" | "none";
 }
 
+const inputCls =
+  "w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500";
+
 export function AddPropertyModal({
   onClose,
   onSaved,
@@ -109,15 +112,22 @@ export function AddPropertyModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4">
-      <div className="bg-white rounded-lg max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[2000] p-4">
+      <div className="bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-lg max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-semibold">Add property</h2>
-          <button onClick={onClose} className="text-gray-500">
+          <button
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-200"
+          >
             ✕
           </button>
         </div>
-        {error && <div className="text-red-600 text-sm">{error}</div>}
+        {error && (
+          <div className="text-red-300 text-sm bg-red-950/40 border border-red-900 rounded px-3 py-2">
+            {error}
+          </div>
+        )}
 
         {step === "url" && (
           <div className="space-y-3">
@@ -125,19 +135,19 @@ export function AddPropertyModal({
               placeholder="Paste listing URL"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="w-full border rounded px-3 py-2"
+              className={inputCls}
             />
             <div className="flex gap-2">
               <button
                 onClick={doScrape}
                 disabled={busy || !url}
-                className="flex-1 bg-black text-white rounded py-2 disabled:opacity-50"
+                className="flex-1 bg-zinc-100 text-zinc-900 rounded py-2 font-medium disabled:opacity-50 hover:bg-white"
               >
                 {busy ? "Scraping..." : "Continue"}
               </button>
               <button
                 onClick={() => setStep("review")}
-                className="flex-1 border rounded py-2"
+                className="flex-1 border border-zinc-700 rounded py-2 hover:bg-zinc-800"
               >
                 Skip and enter manually
               </button>
@@ -148,7 +158,7 @@ export function AddPropertyModal({
         {step === "review" && (
           <div className="space-y-3">
             {(data?.geocode_confidence === "low" || !lat || !lng) && (
-              <div className="text-sm text-amber-700">
+              <div className="text-sm text-amber-300 bg-amber-950/30 border border-amber-900 rounded px-3 py-2">
                 Geocode confidence is low or missing. Drag the pin to the
                 correct location.
               </div>
@@ -157,7 +167,7 @@ export function AddPropertyModal({
               <input
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className={inputCls}
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
@@ -165,28 +175,28 @@ export function AddPropertyModal({
                 <input
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className={inputCls}
                 />
               </Field>
               <Field label="Sq ft">
                 <input
                   value={sqft}
                   onChange={(e) => setSqft(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className={inputCls}
                 />
               </Field>
               <Field label="Beds">
                 <input
                   value={beds}
                   onChange={(e) => setBeds(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className={inputCls}
                 />
               </Field>
               <Field label="Baths">
                 <input
                   value={baths}
                   onChange={(e) => setBaths(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className={inputCls}
                 />
               </Field>
             </div>
@@ -195,12 +205,12 @@ export function AddPropertyModal({
                 <input
                   value={lat}
                   onChange={(e) => setLat(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className={inputCls}
                 />
                 <input
                   value={lng}
                   onChange={(e) => setLng(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className={inputCls}
                 />
               </div>
             </Field>
@@ -215,7 +225,7 @@ export function AddPropertyModal({
             <button
               onClick={save}
               disabled={busy}
-              className="w-full bg-black text-white rounded py-2 disabled:opacity-50"
+              className="w-full bg-zinc-100 text-zinc-900 rounded py-2 font-medium disabled:opacity-50 hover:bg-white"
             >
               {busy ? "Saving..." : "Save property"}
             </button>
@@ -235,7 +245,7 @@ function Field({
 }) {
   return (
     <label className="block text-sm">
-      <span className="text-gray-700">{label}</span>
+      <span className="text-zinc-300">{label}</span>
       <div className="mt-1">{children}</div>
     </label>
   );

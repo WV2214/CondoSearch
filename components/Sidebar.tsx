@@ -5,11 +5,11 @@ import type { Property, TourStatus } from "@/lib/types/property";
 import { publicPhotoUrl } from "./photo-url";
 
 const STATUS_COLOR: Record<TourStatus, string> = {
-  not_toured: "#6b7280",
-  scheduled: "#2563eb",
-  toured: "#16a34a",
-  rejected: "#dc2626",
-  top_pick: "#eab308",
+  not_toured: "#71717a",
+  scheduled: "#60a5fa",
+  toured: "#4ade80",
+  rejected: "#f87171",
+  top_pick: "#facc15",
 };
 const STATUS_LABEL: Record<TourStatus, string> = {
   not_toured: "Not toured",
@@ -47,12 +47,12 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <>
-      <aside className="hidden md:flex bg-white border-l flex-col h-full w-80">
+      <aside className="hidden md:flex bg-zinc-950 border-l border-zinc-800 text-zinc-100 flex-col h-full w-80">
         <SidebarBody {...props} />
       </aside>
 
       <div
-        className={`md:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-2xl rounded-t-xl transition-[height] duration-300 z-[1500] ${
+        className={`md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-zinc-800 text-zinc-100 shadow-2xl rounded-t-xl transition-[height] duration-300 z-[1500] ${
           expanded ? "h-[80vh]" : "h-32"
         }`}
       >
@@ -61,7 +61,7 @@ export function Sidebar(props: SidebarProps) {
           className="w-full py-2 flex justify-center"
           aria-label="Toggle property list"
         >
-          <div className="w-10 h-1 rounded-full bg-gray-300" />
+          <div className="w-10 h-1 rounded-full bg-zinc-700" />
         </button>
         <div className="h-[calc(100%-32px)] flex flex-col">
           <SidebarBody {...props} />
@@ -109,17 +109,19 @@ function SidebarBody({
 
   return (
     <>
-      <div className="p-3 border-b space-y-2">
-        <div className="text-sm font-semibold">{filtered.length} properties</div>
+      <div className="p-3 border-b border-zinc-800 space-y-2">
+        <div className="text-sm font-semibold">
+          {filtered.length} properties
+        </div>
         <div className="flex flex-wrap gap-1">
           {(Object.keys(STATUS_LABEL) as TourStatus[]).map((s) => (
             <button
               key={s}
               onClick={() => toggleStatus(s)}
-              className={`text-xs px-2 py-1 rounded border ${
+              className={`text-xs px-2 py-1 rounded border transition ${
                 filter.has(s)
-                  ? "bg-black text-white border-black"
-                  : "bg-white"
+                  ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                  : "bg-zinc-900 text-zinc-300 border-zinc-700 hover:border-zinc-500"
               }`}
             >
               {STATUS_LABEL[s]}
@@ -129,7 +131,7 @@ function SidebarBody({
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
-          className="w-full border rounded px-2 py-1 text-sm"
+          className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100"
         >
           <option value="default">Sort: status, then rating</option>
           <option value="price_asc">Price ascending</option>
@@ -143,7 +145,7 @@ function SidebarBody({
           <div
             key={p.id}
             onClick={() => onSelect(p)}
-            className="flex gap-3 p-3 border-b cursor-pointer hover:bg-gray-50"
+            className="flex gap-3 p-3 border-b border-zinc-800 cursor-pointer hover:bg-zinc-900"
           >
             {p.photo_path ? (
               <img
@@ -152,11 +154,13 @@ function SidebarBody({
                 className="w-16 h-16 object-cover rounded"
               />
             ) : (
-              <div className="w-16 h-16 bg-gray-200 rounded" />
+              <div className="w-16 h-16 bg-zinc-800 rounded" />
             )}
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate">{p.address}</div>
-              <div className="text-xs text-gray-600">
+              <div className="text-sm font-medium truncate text-zinc-100">
+                {p.address}
+              </div>
+              <div className="text-xs text-zinc-400">
                 {p.price ? `$${p.price.toLocaleString()}` : "—"}
                 {p.beds != null && ` · ${p.beds}bd`}
                 {p.baths != null && ` ${p.baths}ba`}
@@ -166,11 +170,11 @@ function SidebarBody({
                   className="inline-block w-2 h-2 rounded-full"
                   style={{ background: STATUS_COLOR[p.tour_status] }}
                 />
-                <span className="text-xs text-gray-600">
+                <span className="text-xs text-zinc-400">
                   {STATUS_LABEL[p.tour_status]}
                 </span>
                 {p.star_rating && (
-                  <span className="text-xs">
+                  <span className="text-xs text-amber-300">
                     {"★".repeat(p.star_rating)}
                   </span>
                 )}
@@ -181,14 +185,14 @@ function SidebarBody({
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-gray-500 self-start"
+              className="text-xs text-zinc-500 hover:text-zinc-300 self-start"
             >
               ↗
             </a>
           </div>
         ))}
         {sorted.length === 0 && (
-          <div className="p-6 text-sm text-gray-500 text-center">
+          <div className="p-6 text-sm text-zinc-500 text-center">
             No properties match the current filter.
           </div>
         )}
