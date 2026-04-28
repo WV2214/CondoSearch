@@ -1,10 +1,20 @@
 import { signIn, signUp } from "./actions";
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <form className="w-full max-w-sm space-y-4">
         <h1 className="text-2xl font-semibold">Condo Search</h1>
+        {error && (
+          <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
+            {error}
+          </div>
+        )}
         <input
           name="email"
           type="email"
