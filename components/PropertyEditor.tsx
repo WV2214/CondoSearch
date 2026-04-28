@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Property, TourStatus } from "@/lib/types/property";
 import { publicPhotoUrl } from "./photo-url";
+import { OverlayColorSwatch } from "./OverlayColorSwatch";
 
 const STATUSES: TourStatus[] = [
   "not_toured",
@@ -96,23 +97,36 @@ export function PropertyEditor({ initial }: { initial: Property }) {
             <h1 className="text-2xl font-semibold mt-2 truncate">
               {p.address}
             </h1>
-            <div className="text-zinc-400 mt-1">
-              {p.price ? `$${p.price.toLocaleString()}/mo` : "Price unknown"}
-              {p.beds != null && ` · ${p.beds}bd`}
-              {p.baths != null && ` ${p.baths}ba`}
-              {p.square_feet != null &&
-                ` · ${p.square_feet.toLocaleString()} sqft`}
+            <div className="flex items-center gap-2 text-zinc-400 mt-1">
+              <span>
+                {p.price ? `$${p.price.toLocaleString()}/mo` : "Price unknown"}
+                {p.beds != null && ` · ${p.beds}bd`}
+                {p.baths != null && ` ${p.baths}ba`}
+                {p.square_feet != null &&
+                  ` · ${p.square_feet.toLocaleString()} sqft`}
+              </span>
+              <OverlayColorSwatch
+                lat={p.latitude}
+                lng={p.longitude}
+                size={12}
+                propertyId={p.id}
+              />
             </div>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <a
-              href={p.listing_url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm border border-zinc-700 rounded px-3 py-2 hover:bg-zinc-900"
-            >
-              Open listing
-            </a>
+          <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+            {p.listing_urls.map((u, i) => (
+              <a
+                key={i}
+                href={u}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm border border-zinc-700 rounded px-3 py-2 hover:bg-zinc-900"
+              >
+                {p.listing_urls.length > 1
+                  ? `Listing ${i + 1}`
+                  : "Open listing"}
+              </a>
+            ))}
             <button
               onClick={remove}
               className="text-sm border border-red-900 text-red-300 rounded px-3 py-2 hover:bg-red-950/40"

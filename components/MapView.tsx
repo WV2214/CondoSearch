@@ -11,6 +11,8 @@ import { PropertyPins } from "./PropertyPins";
 import { AddPropertyButton } from "./AddPropertyButton";
 import { Sidebar, type SortKey } from "./Sidebar";
 import { OverlayEditor } from "./OverlayEditor";
+import { OverlayColorPicker } from "./OverlayColorPicker";
+import { clearOverride } from "@/lib/overlay-color-overrides";
 import {
   CRIME_OVERLAY,
   DEFAULT_OVERLAY_OPACITY,
@@ -35,6 +37,12 @@ export default function MapView() {
   const [opacity, setOpacity] = useState<number>(DEFAULT_OVERLAY_OPACITY);
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pickingForId, setPickingForId] = useState<string | null>(null);
+  const [pickFlash, setPickFlash] = useState<
+    | { kind: "ok"; hex: string; address: string }
+    | { kind: "miss" }
+    | null
+  >(null);
   const mapRef = useRef<L.Map | null>(null);
 
   // Hydrate from localStorage on mount
@@ -76,6 +84,33 @@ export default function MapView() {
     setBounds(CRIME_OVERLAY.bounds);
   };
 
+  const pickingProperty = pickingForId
+    ? properties.find((p) => p.id === pickingForId) ?? null
+    : null;
+
+  const exitPicking = useCallback(() => {
+    setPickingForId(null);
+  }, []);
+
+  const handlePicked = useCallback(
+    (hex: string) => {
+      const addr = pickingProperty?.address ?? "property";
+      setPickFlash({ kind: "ok", hex, address: addr });
+      setPickingForId(null);
+      setTimeout(() => setPickFlash(null), 2000);
+    },
+    [pickingProperty],
+  );
+
+  const handleMissed = useCallback(() => {
+    setPickFlash({ kind: "miss" });
+    setTimeout(() => setPickFlash(null), 2000);
+  }, []);
+
+  const handleClearOverride = useCallback((id: string) => {
+    clearOverride(id);
+  }, []);
+
   const copyBoundsLine = async () => {
     const [s, w, n, e] = bounds;
     const line = `bounds: [${s.toFixed(6)}, ${w.toFixed(6)}, ${n.toFixed(6)}, ${e.toFixed(6)}] as Bounds,`;
@@ -113,8 +148,50 @@ export default function MapView() {
           {editing && (
             <OverlayEditor bounds={bounds} onChange={handleBoundsChange} />
           )}
+          {pickingForId && (
+            <OverlayColorPicker
+              propertyId={pickingForId}
+              onPicked={handlePicked}
+              onMissed={handleMissed}
+            />
+          )}
           <PropertyPins properties={properties} onMoved={refresh} />
         </MapContainer>
+        {(pickingProperty || pickFlash) && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1100] flex items-center gap-3 bg-zinc-900/95 text-zinc-100 border border-amber-500/60 shadow-lg rounded px-4 py-2 text-sm">
+            {pickingProperty ? (
+              <>
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                <span>
+                  Click on the overlay to set color for{" "}
+                  <span className="font-semibold">
+                    {pickingProperty.address}
+                  </span>
+                </span>
+                <button
+                  onClick={exitPicking}
+                  className="ml-2 border border-zinc-600 rounded px-2 py-0.5 text-xs hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : pickFlash?.kind === "ok" ? (
+              <>
+                <span
+                  className="inline-block w-3 h-3 rounded-full border border-black/40"
+                  style={{ background: pickFlash.hex }}
+                />
+                <span>
+                  Set overlay color for{" "}
+                  <span className="font-semibold">{pickFlash.address}</span> to{" "}
+                  {pickFlash.hex}
+                </span>
+              </>
+            ) : (
+              <span>That click was outside the overlay — try again.</span>
+            )}
+          </div>
+        )}
         <Link
           href="/compare"
           className="absolute top-4 left-4 z-[1000] bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm hover:bg-zinc-800"
@@ -196,6 +273,9 @@ export default function MapView() {
         setFilter={setFilter}
         sort={sort}
         setSort={setSort}
+        pickingForId={pickingForId}
+        onStartPick={setPickingForId}
+        onClearOverride={handleClearOverride}
       />
     </div>
   );

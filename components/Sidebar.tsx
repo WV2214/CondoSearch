@@ -44,6 +44,9 @@ interface SidebarProps {
   setFilter: (s: Set<TourStatus>) => void;
   sort: SortKey;
   setSort: (s: SortKey) => void;
+  pickingForId?: string | null;
+  onStartPick?: (id: string | null) => void;
+  onClearOverride?: (id: string) => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -109,6 +112,9 @@ function SidebarBody({
   setFilter,
   sort,
   setSort,
+  pickingForId,
+  onStartPick,
+  onClearOverride,
 }: SidebarProps) {
   const router = useRouter();
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -346,7 +352,23 @@ function SidebarBody({
                       {"★".repeat(p.star_rating)}
                     </span>
                   )}
-                  <OverlayColorSwatch lat={p.latitude} lng={p.longitude} size={8} />
+                  <OverlayColorSwatch
+                    lat={p.latitude}
+                    lng={p.longitude}
+                    size={16}
+                    propertyId={p.id}
+                    active={pickingForId === p.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (pickingForId === p.id) onStartPick?.(null);
+                      else onStartPick?.(p.id);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onClearOverride?.(p.id);
+                    }}
+                  />
                 </div>
               </div>
               <div className="flex flex-col gap-1 items-end self-start">
