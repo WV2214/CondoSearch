@@ -9,6 +9,7 @@ import { OverlayColorSwatch } from "./OverlayColorSwatch";
 
 const STATUSES: TourStatus[] = [
   "not_toured",
+  "called",
   "scheduled",
   "toured",
   "rejected",
@@ -17,6 +18,7 @@ const STATUSES: TourStatus[] = [
 
 const STATUS_LABEL: Record<TourStatus, string> = {
   not_toured: "Not toured",
+  called: "Called",
   scheduled: "Scheduled",
   toured: "Toured",
   rejected: "Rejected",

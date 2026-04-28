@@ -6,6 +6,7 @@ import { publicPhotoUrl } from "@/components/photo-url";
 
 const STATUS_LABEL: Record<TourStatus, string> = {
   not_toured: "Not toured",
+  called: "Called",
   scheduled: "Scheduled",
   toured: "Toured",
   rejected: "Rejected",

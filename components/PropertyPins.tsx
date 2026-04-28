@@ -16,6 +16,7 @@ import {
 
 const STATUS_COLOR: Record<TourStatus, string> = {
   not_toured: "#71717a",
+  called: "#fb923c",
   scheduled: "#60a5fa",
   toured: "#4ade80",
   rejected: "#f87171",

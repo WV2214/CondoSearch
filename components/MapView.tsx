@@ -32,7 +32,7 @@ export default function MapView() {
     "auto",
   );
   const [filter, setFilter] = useState<Set<TourStatus>>(new Set());
-  const [sort, setSort] = useState<SortKey>("default");
+  const [sort, setSort] = useState<SortKey>("my_ranking");
   const [bounds, setBounds] = useState<Bounds>(CRIME_OVERLAY.bounds);
   const [opacity, setOpacity] = useState<number>(DEFAULT_OVERLAY_OPACITY);
   const [editing, setEditing] = useState(false);

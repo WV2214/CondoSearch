@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const tourStatusSchema = z.enum([
   "not_toured",
+  "called",
   "scheduled",
   "toured",
   "rejected",
@@ -28,6 +29,7 @@ export const propertySchema = z.object({
   cons: z.array(z.string()),
   created_at: z.string(),
   updated_at: z.string(),
+  rank: z.number().int().nullable(),
 });
 export type Property = z.infer<typeof propertySchema>;
 
@@ -61,5 +63,6 @@ export const propertyPatchSchema = z.object({
   baths: z.number().nullable().optional(),
   square_feet: z.number().int().nullable().optional(),
   photo_path: z.string().nullable().optional(),
+  rank: z.number().int().nullable().optional(),
 });
 export type PropertyPatch = z.infer<typeof propertyPatchSchema>;
