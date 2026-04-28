@@ -13,9 +13,12 @@ import { Sidebar, type SortKey } from "./Sidebar";
 import { OverlayEditor } from "./OverlayEditor";
 import {
   CRIME_OVERLAY,
+  DEFAULT_OVERLAY_OPACITY,
   loadStoredBounds,
   saveStoredBounds,
   clearStoredBounds,
+  loadStoredOpacity,
+  saveStoredOpacity,
   type Bounds,
 } from "@/lib/overlay-config";
 
@@ -29,15 +32,23 @@ export default function MapView() {
   const [filter, setFilter] = useState<Set<TourStatus>>(new Set());
   const [sort, setSort] = useState<SortKey>("default");
   const [bounds, setBounds] = useState<Bounds>(CRIME_OVERLAY.bounds);
+  const [opacity, setOpacity] = useState<number>(DEFAULT_OVERLAY_OPACITY);
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
-  // Hydrate bounds from localStorage on mount
+  // Hydrate from localStorage on mount
   useEffect(() => {
-    const stored = loadStoredBounds();
-    if (stored) setBounds(stored);
+    const storedBounds = loadStoredBounds();
+    if (storedBounds) setBounds(storedBounds);
+    const storedOpacity = loadStoredOpacity();
+    if (storedOpacity != null) setOpacity(storedOpacity);
   }, []);
+
+  const handleOpacityChange = (v: number) => {
+    setOpacity(v);
+    saveStoredOpacity(v);
+  };
 
   const refresh = useCallback(() => {
     fetch("/api/properties")
@@ -96,6 +107,7 @@ export default function MapView() {
           <CrimeOverlay
             forceVisible={editing ? true : forceVisible}
             bounds={bounds}
+            opacity={opacity}
             ignoreZoomAutoHide={editing}
           />
           {editing && (
@@ -110,20 +122,39 @@ export default function MapView() {
           Compare
         </Link>
         <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2">
-          <button
-            onClick={() =>
-              setOverlayMode(
-                overlayMode === "auto"
-                  ? "off"
-                  : overlayMode === "off"
-                    ? "on"
-                    : "auto",
-              )
-            }
-            className="bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm hover:bg-zinc-800"
-          >
-            Crime overlay: {overlayMode}
-          </button>
+          <div className="bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm flex flex-col gap-2 w-56">
+            <button
+              onClick={() =>
+                setOverlayMode(
+                  overlayMode === "auto"
+                    ? "off"
+                    : overlayMode === "off"
+                      ? "on"
+                      : "auto",
+                )
+              }
+              className="text-left hover:text-amber-300"
+            >
+              Crime overlay: {overlayMode}
+            </button>
+            <label className="flex items-center gap-2 text-xs text-zinc-400">
+              <span className="w-12 shrink-0">Opacity</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={opacity}
+                onChange={(e) =>
+                  handleOpacityChange(parseFloat(e.target.value))
+                }
+                className="flex-1 accent-amber-400"
+              />
+              <span className="w-8 text-right text-zinc-300">
+                {Math.round(opacity * 100)}%
+              </span>
+            </label>
+          </div>
           <button
             onClick={() => setEditing(!editing)}
             className={`shadow-lg rounded px-3 py-2 text-sm border transition ${

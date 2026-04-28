@@ -7,12 +7,14 @@ import { CRIME_OVERLAY, type Bounds } from "@/lib/overlay-config";
 interface Props {
   forceVisible: boolean | null;
   bounds: Bounds;
+  opacity: number;
   ignoreZoomAutoHide?: boolean;
 }
 
 export function CrimeOverlay({
   forceVisible,
   bounds,
+  opacity,
   ignoreZoomAutoHide = false,
 }: Props) {
   const map = useMap();
@@ -31,7 +33,7 @@ export function CrimeOverlay({
         [s, w],
         [n, e],
       ]}
-      opacity={0.65}
+      opacity={opacity}
     />
   );
 }
