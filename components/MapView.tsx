@@ -10,6 +10,14 @@ import { CrimeOverlay } from "./CrimeOverlay";
 import { PropertyPins } from "./PropertyPins";
 import { AddPropertyButton } from "./AddPropertyButton";
 import { Sidebar, type SortKey } from "./Sidebar";
+import { OverlayEditor } from "./OverlayEditor";
+import {
+  CRIME_OVERLAY,
+  loadStoredBounds,
+  saveStoredBounds,
+  clearStoredBounds,
+  type Bounds,
+} from "@/lib/overlay-config";
 
 const HOUSTON_CENTER: [number, number] = [29.76, -95.37];
 
@@ -20,7 +28,16 @@ export default function MapView() {
   );
   const [filter, setFilter] = useState<Set<TourStatus>>(new Set());
   const [sort, setSort] = useState<SortKey>("default");
+  const [bounds, setBounds] = useState<Bounds>(CRIME_OVERLAY.bounds);
+  const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
+
+  // Hydrate bounds from localStorage on mount
+  useEffect(() => {
+    const stored = loadStoredBounds();
+    if (stored) setBounds(stored);
+  }, []);
 
   const refresh = useCallback(() => {
     fetch("/api/properties")
@@ -38,6 +55,28 @@ export default function MapView() {
   const forceVisible =
     overlayMode === "auto" ? null : overlayMode === "on";
 
+  const handleBoundsChange = (b: Bounds) => {
+    setBounds(b);
+    saveStoredBounds(b);
+  };
+
+  const resetBounds = () => {
+    clearStoredBounds();
+    setBounds(CRIME_OVERLAY.bounds);
+  };
+
+  const copyBoundsLine = async () => {
+    const [s, w, n, e] = bounds;
+    const line = `bounds: [${s.toFixed(6)}, ${w.toFixed(6)}, ${n.toFixed(6)}, ${e.toFixed(6)}] as Bounds,`;
+    try {
+      await navigator.clipboard.writeText(line);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("Copy this line into lib/overlay-config.ts:", line);
+    }
+  };
+
   return (
     <div className="relative w-screen h-screen md:flex">
       <div className="relative h-full md:flex-1">
@@ -54,7 +93,14 @@ export default function MapView() {
             attribution="&copy; OpenStreetMap"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <CrimeOverlay forceVisible={forceVisible} />
+          <CrimeOverlay
+            forceVisible={editing ? true : forceVisible}
+            bounds={bounds}
+            ignoreZoomAutoHide={editing}
+          />
+          {editing && (
+            <OverlayEditor bounds={bounds} onChange={handleBoundsChange} />
+          )}
           <PropertyPins properties={properties} />
         </MapContainer>
         <Link
@@ -63,20 +109,52 @@ export default function MapView() {
         >
           Compare
         </Link>
-        <button
-          onClick={() =>
-            setOverlayMode(
-              overlayMode === "auto"
-                ? "off"
-                : overlayMode === "off"
-                  ? "on"
-                  : "auto",
-            )
-          }
-          className="absolute top-4 right-4 z-[1000] bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm hover:bg-zinc-800"
-        >
-          Crime overlay: {overlayMode}
-        </button>
+        <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2">
+          <button
+            onClick={() =>
+              setOverlayMode(
+                overlayMode === "auto"
+                  ? "off"
+                  : overlayMode === "off"
+                    ? "on"
+                    : "auto",
+              )
+            }
+            className="bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm hover:bg-zinc-800"
+          >
+            Crime overlay: {overlayMode}
+          </button>
+          <button
+            onClick={() => setEditing(!editing)}
+            className={`shadow-lg rounded px-3 py-2 text-sm border transition ${
+              editing
+                ? "bg-amber-400 text-zinc-900 border-amber-300 hover:bg-amber-300"
+                : "bg-zinc-900/95 text-zinc-100 border-zinc-700 hover:bg-zinc-800"
+            }`}
+          >
+            {editing ? "Done editing" : "Edit overlay"}
+          </button>
+          {editing && (
+            <div className="flex flex-col gap-2 bg-zinc-900/95 border border-zinc-700 rounded p-2 shadow-lg w-64 text-xs text-zinc-300">
+              <div>
+                Drag the four yellow corners to resize. Drag the white
+                center handle to move. Changes auto-save to this browser.
+              </div>
+              <button
+                onClick={copyBoundsLine}
+                className="bg-zinc-100 text-zinc-900 rounded px-2 py-1 font-medium hover:bg-white"
+              >
+                {copied ? "Copied!" : "Copy bounds line"}
+              </button>
+              <button
+                onClick={resetBounds}
+                className="border border-zinc-700 rounded px-2 py-1 hover:bg-zinc-800"
+              >
+                Reset to config defaults
+              </button>
+            </div>
+          )}
+        </div>
         <AddPropertyButton onSaved={refresh} />
       </div>
       <Sidebar
