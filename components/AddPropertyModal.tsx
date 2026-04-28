@@ -47,6 +47,16 @@ export function AddPropertyModal({
   const [lat, setLat] = useState<string>("");
   const [lng, setLng] = useState<string>("");
 
+  const safeJson = async (res: Response): Promise<Record<string, unknown>> => {
+    const text = await res.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: text.slice(0, 200) };
+    }
+  };
+
   const doScrape = async () => {
     setBusy(true);
     setError(null);
@@ -58,9 +68,12 @@ export function AddPropertyModal({
         body: JSON.stringify({ url }),
       });
       if (!res.ok) {
-        throw new Error((await res.json()).error ?? "scrape failed");
+        const body = await safeJson(res);
+        throw new Error(
+          (body.error as string | undefined) ?? `scrape failed (${res.status})`,
+        );
       }
-      const d: ScrapeResp = await res.json();
+      const d = (await safeJson(res)) as unknown as ScrapeResp;
       setData(d);
       setAddress(d.scraped.address ?? "");
       setPrice(d.scraped.price?.toString() ?? "");
@@ -103,9 +116,12 @@ export function AddPropertyModal({
         body: form,
       });
       if (!res.ok) {
-        throw new Error((await res.json()).error ?? "extraction failed");
+        const body = await safeJson(res);
+        throw new Error(
+          (body.error as string | undefined) ?? `extraction failed (${res.status})`,
+        );
       }
-      const j = await res.json();
+      const j = (await safeJson(res)) as { extracted?: unknown };
       const x = j.extracted as {
         address: string | null;
         price: number | null;

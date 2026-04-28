@@ -82,7 +82,7 @@ export async function POST(req: Request) {
   const base64 = buf.toString("base64");
 
   const message = await anthropic.messages.create({
-    model: "claude-opus-4-7",
+    model: "claude-haiku-4-5",
     max_tokens: 1024,
     output_config: {
       format: {
