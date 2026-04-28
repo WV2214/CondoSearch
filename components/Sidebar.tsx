@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Property, TourStatus } from "@/lib/types/property";
 import { publicPhotoUrl } from "./photo-url";
+import { OverlayColorSwatch } from "./OverlayColorSwatch";
 
 const STATUS_COLOR: Record<TourStatus, string> = {
   not_toured: "#71717a",
@@ -36,6 +39,7 @@ export type SortKey =
 interface SidebarProps {
   properties: Property[];
   onSelect: (p: Property) => void;
+  onChanged?: () => void;
   filter: Set<TourStatus>;
   setFilter: (s: Set<TourStatus>) => void;
   sort: SortKey;
@@ -71,14 +75,64 @@ export function Sidebar(props: SidebarProps) {
   );
 }
 
+function extractUrlFromDataTransfer(dt: DataTransfer): string | null {
+  const uriList = dt.getData("text/uri-list");
+  if (uriList) {
+    const first = uriList
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .find((s) => s && !s.startsWith("#"));
+    if (first) return first;
+  }
+  const html = dt.getData("text/html");
+  if (html) {
+    const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (match) return match[1];
+  }
+  const text = dt.getData("text/plain");
+  if (text && /^https?:\/\//i.test(text.trim())) return text.trim();
+  return null;
+}
+
+type ContextMenuState = {
+  propertyId: string;
+  address: string;
+  x: number;
+  y: number;
+};
+
 function SidebarBody({
   properties,
   onSelect,
+  onChanged,
   filter,
   setFilter,
   sort,
   setSort,
 }: SidebarProps) {
+  const router = useRouter();
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
   const filtered = properties.filter((p) =>
     filter.size === 0 ? true : filter.has(p.tour_status),
   );
@@ -105,6 +159,69 @@ function SidebarBody({
     if (next.has(s)) next.delete(s);
     else next.add(s);
     setFilter(next);
+  };
+
+  const handleDrop = async (
+    e: React.DragEvent<HTMLDivElement>,
+    propertyId: string,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverId(null);
+
+    const dt = e.dataTransfer;
+    const file = dt.files && dt.files[0];
+
+    setUploadingId(propertyId);
+    try {
+      let res: Response;
+      if (file && file.type.startsWith("image/")) {
+        const fd = new FormData();
+        fd.append("file", file);
+        res = await fetch(`/api/properties/${propertyId}/photo`, {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        const url = extractUrlFromDataTransfer(dt);
+        if (!url) {
+          window.alert(
+            "No image or image URL found in drop. Try dragging the image directly.",
+          );
+          return;
+        }
+        res = await fetch(`/api/properties/${propertyId}/photo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_url: url }),
+        });
+      }
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        window.alert(`Photo upload failed: ${res.status} ${msg}`);
+        return;
+      }
+      onChanged?.();
+    } catch (err) {
+      window.alert(
+        `Photo upload failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const handleDelete = async (propertyId: string, address: string) => {
+    if (!window.confirm(`Delete "${address}"? This cannot be undone.`)) return;
+    const res = await fetch(`/api/properties/${propertyId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      window.alert(`Delete failed: ${res.status} ${msg}`);
+      return;
+    }
+    onChanged?.();
   };
 
   return (
@@ -141,62 +258,161 @@ function SidebarBody({
         </select>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {sorted.map((p) => (
-          <div
-            key={p.id}
-            onClick={() => onSelect(p)}
-            className="flex gap-3 p-3 border-b border-zinc-800 cursor-pointer hover:bg-zinc-900"
-          >
-            {p.photo_path ? (
-              <img
-                src={publicPhotoUrl(p.photo_path)}
-                alt=""
-                className="w-16 h-16 object-cover rounded"
-              />
-            ) : (
-              <div className="w-16 h-16 bg-zinc-800 rounded" />
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate text-zinc-100">
-                {p.address}
+        {sorted.map((p) => {
+          const isDragOver = dragOverId === p.id;
+          const isUploading = uploadingId === p.id;
+          return (
+            <div
+              key={p.id}
+              onClick={() => onSelect(p)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setMenu({
+                  propertyId: p.id,
+                  address: p.address,
+                  x: e.clientX,
+                  y: e.clientY,
+                });
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverId(p.id);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "copy";
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.currentTarget === e.target) setDragOverId(null);
+              }}
+              onDrop={(e) => handleDrop(e, p.id)}
+              className={`flex gap-3 p-3 border-b border-zinc-800 cursor-pointer transition-colors ${
+                isDragOver
+                  ? "bg-emerald-900/40 ring-2 ring-emerald-400 ring-inset"
+                  : "hover:bg-zinc-900"
+              }`}
+            >
+              <div className="relative w-16 h-16 shrink-0">
+                {p.photo_path ? (
+                  <img
+                    src={`${publicPhotoUrl(p.photo_path)}?t=${encodeURIComponent(p.updated_at)}`}
+                    alt=""
+                    className="w-16 h-16 object-cover rounded pointer-events-none"
+                  />
+                ) : (
+                  <div
+                    className={`w-16 h-16 rounded ${
+                      isDragOver
+                        ? "bg-emerald-800/60 border-2 border-dashed border-emerald-400"
+                        : "bg-zinc-800 border-2 border-dashed border-zinc-700"
+                    }`}
+                  />
+                )}
+                {isUploading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded text-[10px] text-zinc-100">
+                    Uploading…
+                  </div>
+                )}
+                {isDragOver && !isUploading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/30 rounded text-[10px] text-emerald-100 font-semibold pointer-events-none">
+                    Drop
+                  </div>
+                )}
               </div>
-              <div className="text-xs text-zinc-400">
-                {p.price ? `$${p.price.toLocaleString()}` : "—"}
-                {p.beds != null && ` · ${p.beds}bd`}
-                {p.baths != null && ` ${p.baths}ba`}
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <span
-                  className="inline-block w-2 h-2 rounded-full"
-                  style={{ background: STATUS_COLOR[p.tour_status] }}
-                />
-                <span className="text-xs text-zinc-400">
-                  {STATUS_LABEL[p.tour_status]}
-                </span>
-                {p.star_rating && (
-                  <span className="text-xs text-amber-300">
-                    {"★".repeat(p.star_rating)}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate text-zinc-100">
+                  {p.address}
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {p.price ? `$${p.price.toLocaleString()}` : "—"}
+                  {p.beds != null && ` · ${p.beds}bd`}
+                  {p.baths != null && ` ${p.baths}ba`}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full"
+                    style={{ background: STATUS_COLOR[p.tour_status] }}
+                  />
+                  <span className="text-xs text-zinc-400">
+                    {STATUS_LABEL[p.tour_status]}
                   </span>
+                  {p.star_rating && (
+                    <span className="text-xs text-amber-300">
+                      {"★".repeat(p.star_rating)}
+                    </span>
+                  )}
+                  <OverlayColorSwatch lat={p.latitude} lng={p.longitude} size={8} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 items-end self-start">
+                <Link
+                  href={`/properties/${p.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm text-zinc-500 hover:text-zinc-200 leading-none"
+                  title="Open details"
+                >
+                  →
+                </Link>
+                {p.listing_urls[0] && (
+                  <a
+                    href={p.listing_urls[0]}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm text-zinc-500 hover:text-zinc-300 leading-none"
+                    title="Open listing"
+                  >
+                    ↗
+                  </a>
                 )}
               </div>
             </div>
-            <a
-              href={p.listing_url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-xs text-zinc-500 hover:text-zinc-300 self-start"
-            >
-              ↗
-            </a>
-          </div>
-        ))}
+          );
+        })}
         {sorted.length === 0 && (
           <div className="p-6 text-sm text-zinc-500 text-center">
             No properties match the current filter.
           </div>
         )}
       </div>
+      {menu && (
+        <div
+          className="fixed z-[2000] min-w-[140px] bg-zinc-900 border border-zinc-700 rounded shadow-xl text-sm text-zinc-100 overflow-hidden"
+          style={{
+            left: Math.min(menu.x, window.innerWidth - 160),
+            top: Math.min(menu.y, window.innerHeight - 90),
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            className="w-full text-left px-3 py-2 hover:bg-zinc-800"
+            onClick={() => {
+              const id = menu.propertyId;
+              setMenu(null);
+              router.push(`/properties/${id}`);
+            }}
+          >
+            Edit
+          </button>
+          <button
+            className="w-full text-left px-3 py-2 text-red-400 hover:bg-zinc-800"
+            onClick={() => {
+              const id = menu.propertyId;
+              const address = menu.address;
+              setMenu(null);
+              void handleDelete(id, address);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </>
   );
 }

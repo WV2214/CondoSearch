@@ -113,7 +113,7 @@ export default function MapView() {
           {editing && (
             <OverlayEditor bounds={bounds} onChange={handleBoundsChange} />
           )}
-          <PropertyPins properties={properties} />
+          <PropertyPins properties={properties} onMoved={refresh} />
         </MapContainer>
         <Link
           href="/compare"
@@ -191,6 +191,7 @@ export default function MapView() {
       <Sidebar
         properties={properties}
         onSelect={onSelect}
+        onChanged={refresh}
         filter={filter}
         setFilter={setFilter}
         sort={sort}
