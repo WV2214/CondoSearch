@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import type { Property, TourStatus } from "@/lib/types/property";
 import { publicPhotoUrl } from "./photo-url";
 import { OverlayColorSwatch } from "./OverlayColorSwatch";
+import {
+  fetchMinutesToMontrose,
+  getCachedMinutes,
+} from "@/lib/travel-time";
 
 const STATUS_COLOR: Record<TourStatus, string> = {
   not_toured: "#71717a",
@@ -120,6 +124,38 @@ function SidebarBody({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [montroseMins, setMontroseMins] = useState<
+    Record<string, number | null>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    // Seed from cache synchronously so cached entries render on the first paint.
+    const seeded: Record<string, number | null> = {};
+    for (const p of properties) {
+      const cached = getCachedMinutes(p.latitude, p.longitude);
+      if (cached !== undefined) seeded[p.id] = cached;
+    }
+    setMontroseMins(seeded);
+
+    // Fetch missing entries serially with a small stagger to stay under the
+    // OSRM public demo server's rate limit.
+    (async () => {
+      for (const p of properties) {
+        if (cancelled) return;
+        const cached = getCachedMinutes(p.latitude, p.longitude);
+        if (cached !== undefined) continue;
+        const m = await fetchMinutesToMontrose(p.latitude, p.longitude);
+        if (cancelled) return;
+        setMontroseMins((prev) => ({ ...prev, [p.id]: m }));
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [properties]);
 
   useEffect(() => {
     if (!menu) return;
@@ -339,6 +375,11 @@ function SidebarBody({
                   {p.beds != null && ` · ${p.beds}bd`}
                   {p.baths != null && ` ${p.baths}ba`}
                 </div>
+                {montroseMins[p.id] != null && (
+                  <div className="text-xs text-zinc-500">
+                    {montroseMins[p.id]} min to Montrose
+                  </div>
+                )}
                 <div className="flex items-center gap-2 mt-1">
                   <span
                     className="inline-block w-2 h-2 rounded-full"
