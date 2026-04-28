@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 const ManualGeoPicker = dynamic(() => import("./ManualGeoPicker"), {
@@ -35,6 +35,7 @@ export function AddPropertyModal({
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [data, setData] = useState<ScrapeResp | null>(null);
@@ -89,6 +90,86 @@ export function AddPropertyModal({
       setBusy(false);
     }
   };
+
+  const extractFromImage = async (file: File) => {
+    setExtracting(true);
+    setError(null);
+    setInfo("Reading screenshot with Claude vision...");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/properties/extract-from-image", {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        throw new Error((await res.json()).error ?? "extraction failed");
+      }
+      const j = await res.json();
+      const x = j.extracted as {
+        address: string | null;
+        price: number | null;
+        beds: number | null;
+        baths: number | null;
+        square_feet: number | null;
+      };
+      if (x.address) setAddress(x.address);
+      if (x.price != null) setPrice(String(x.price));
+      if (x.beds != null) setBeds(String(x.beds));
+      if (x.baths != null) setBaths(String(x.baths));
+      if (x.square_feet != null) setSqft(String(x.square_feet));
+      setInfo(
+        "Extracted from screenshot. Review the fields, then either click 'Find on map' to geocode the address or drag the pin manually before saving.",
+      );
+      setStep("review");
+
+      if (x.address) {
+        try {
+          const g = await fetch("/api/geocode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: x.address }),
+          });
+          if (g.ok) {
+            const gj = await g.json();
+            if (gj.latitude != null && gj.longitude != null) {
+              setLat(String(gj.latitude));
+              setLng(String(gj.longitude));
+            }
+          }
+        } catch {
+          // Non-fatal — user can geocode manually.
+        }
+      }
+    } catch (e) {
+      setError((e as Error).message);
+      setInfo(null);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // Listen for clipboard paste of an image while the modal is open.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) {
+            e.preventDefault();
+            extractFromImage(f);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const geocodeAddressNow = async () => {
     if (!address.trim()) return;
@@ -203,6 +284,35 @@ export function AddPropertyModal({
               >
                 Skip and enter manually
               </button>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-4 mt-4">
+              <div className="text-sm text-zinc-300 font-medium mb-1">
+                Or paste a screenshot
+              </div>
+              <div className="text-xs text-zinc-500 mb-3">
+                Faster than the URL when sites block scraping. Press Ctrl+V
+                anywhere in this modal, or use the button below.
+              </div>
+              <label
+                className={`block border-2 border-dashed border-zinc-700 rounded p-4 text-center text-sm cursor-pointer hover:border-zinc-500 hover:bg-zinc-800/50 transition ${
+                  extracting ? "opacity-50 cursor-wait" : ""
+                }`}
+              >
+                {extracting
+                  ? "Reading screenshot..."
+                  : "Click to upload, or paste an image (Ctrl+V)"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={extracting}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) extractFromImage(f);
+                  }}
+                />
+              </label>
             </div>
           </div>
         )}
