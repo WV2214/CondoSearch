@@ -34,7 +34,9 @@ export function AddPropertyModal({
   const [step, setStep] = useState<"url" | "review">("url");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [data, setData] = useState<ScrapeResp | null>(null);
   const [address, setAddress] = useState("");
   const [price, setPrice] = useState<string>("");
@@ -47,6 +49,7 @@ export function AddPropertyModal({
   const doScrape = async () => {
     setBusy(true);
     setError(null);
+    setInfo(null);
     try {
       const res = await fetch("/api/properties/scrape", {
         method: "POST",
@@ -65,12 +68,56 @@ export function AddPropertyModal({
       setSqft(d.scraped.square_feet?.toString() ?? "");
       setLat(d.latitude?.toString() ?? "");
       setLng(d.longitude?.toString() ?? "");
+
+      const allNull =
+        !d.scraped.address &&
+        !d.scraped.price &&
+        !d.scraped.beds &&
+        !d.scraped.baths &&
+        !d.scraped.square_feet &&
+        !d.scraped.photo_url;
+      if (allNull) {
+        setInfo(
+          "The listing site blocked us or the parser couldn't find anything. Fill in the fields manually below.",
+        );
+      }
       setStep("review");
     } catch (e) {
       setError((e as Error).message);
       setStep("review");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const geocodeAddressNow = async () => {
+    if (!address.trim()) return;
+    setGeocoding(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      if (!res.ok) throw new Error("geocode failed");
+      const j = (await res.json()) as {
+        latitude: number | null;
+        longitude: number | null;
+        confidence: "high" | "low" | "none";
+      };
+      if (j.latitude == null || j.longitude == null) {
+        setError(
+          "Couldn't find that address. Drag the pin on the map to set the location.",
+        );
+      } else {
+        setLat(j.latitude.toString());
+        setLng(j.longitude.toString());
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGeocoding(false);
     }
   };
 
@@ -128,6 +175,11 @@ export function AddPropertyModal({
             {error}
           </div>
         )}
+        {info && (
+          <div className="text-blue-200 text-sm bg-blue-950/30 border border-blue-900 rounded px-3 py-2">
+            {info}
+          </div>
+        )}
 
         {step === "url" && (
           <div className="space-y-3">
@@ -164,11 +216,21 @@ export function AddPropertyModal({
               </div>
             )}
             <Field label="Address">
-              <input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className={inputCls}
-              />
+              <div className="flex gap-2">
+                <input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={geocodeAddressNow}
+                  disabled={geocoding || !address.trim()}
+                  className="shrink-0 border border-zinc-700 rounded px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  {geocoding ? "..." : "Find on map"}
+                </button>
+              </div>
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Price ($/mo)">

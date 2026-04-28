@@ -2,7 +2,7 @@
 
 import { Marker, Polyline } from "react-leaflet";
 import L from "leaflet";
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { Bounds } from "@/lib/overlay-config";
 
 interface Props {
@@ -12,36 +12,38 @@ interface Props {
 
 type CornerKey = "nw" | "ne" | "se" | "sw";
 
-const cornerIcon = (color: string) =>
-  L.divIcon({
-    className: "",
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-    html: `<div style="
-      width:16px;height:16px;border-radius:50%;
-      background:${color};
-      border:2px solid #0a0a0a;
-      box-shadow:0 0 0 2px ${color};
-    "></div>`,
-  });
+const cornerIcon = L.divIcon({
+  className: "",
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  html: `<div style="
+    width:24px;height:24px;border-radius:50%;
+    background:#facc15;
+    border:3px solid #0a0a0a;
+    box-shadow:0 0 0 2px #facc15, 0 2px 6px rgba(0,0,0,0.6);
+    cursor:grab;
+    pointer-events:auto;
+  "></div>`,
+});
 
 const centerIcon = L.divIcon({
   className: "",
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
   html: `<div style="
-    width:22px;height:22px;border-radius:50%;
+    width:28px;height:28px;border-radius:50%;
     background:#fafafa;
-    border:2px solid #0a0a0a;
-    box-shadow:0 0 0 2px #fafafa;
+    border:3px solid #0a0a0a;
+    box-shadow:0 0 0 2px #fafafa, 0 2px 6px rgba(0,0,0,0.6);
     display:flex;align-items:center;justify-content:center;
-    font-size:11px;color:#0a0a0a;font-weight:bold;
+    font-size:13px;color:#0a0a0a;font-weight:bold;
+    cursor:grab;
+    pointer-events:auto;
   ">✥</div>`,
 });
 
 export function OverlayEditor({ bounds, onChange }: Props) {
   const [s, w, n, e] = bounds;
-  const cornerColor = "#facc15";
 
   const corners: Record<CornerKey, [number, number]> = useMemo(
     () => ({
@@ -54,49 +56,43 @@ export function OverlayEditor({ bounds, onChange }: Props) {
   );
 
   const center: [number, number] = [(s + n) / 2, (w + e) / 2];
-  const dragStart = useRef<{ lat: number; lng: number } | null>(null);
 
-  const updateCorner = (key: CornerKey, lat: number, lng: number) => {
-    let ns = s,
-      nw_ = w,
-      nn = n,
-      ne_ = e;
+  const handleCornerDragEnd = (key: CornerKey, ev: L.LeafletEvent) => {
+    const ll = (ev.target as L.Marker).getLatLng();
+    let ns = s;
+    let nw_ = w;
+    let nn = n;
+    let ne_ = e;
     switch (key) {
       case "nw":
-        nn = lat;
-        nw_ = lng;
+        nn = ll.lat;
+        nw_ = ll.lng;
         break;
       case "ne":
-        nn = lat;
-        ne_ = lng;
+        nn = ll.lat;
+        ne_ = ll.lng;
         break;
       case "se":
-        ns = lat;
-        ne_ = lng;
+        ns = ll.lat;
+        ne_ = ll.lng;
         break;
       case "sw":
-        ns = lat;
-        nw_ = lng;
+        ns = ll.lat;
+        nw_ = ll.lng;
         break;
     }
-    // Keep n > s and e > w
     if (nn < ns) [nn, ns] = [ns, nn];
     if (ne_ < nw_) [ne_, nw_] = [nw_, ne_];
     onChange([ns, nw_, nn, ne_]);
   };
 
-  const onCenterDragStart = (e: L.LeafletEvent) => {
-    const ll = (e.target as L.Marker).getLatLng();
-    dragStart.current = { lat: ll.lat, lng: ll.lng };
-  };
-
-  const onCenterDrag = (ev: L.LeafletEvent) => {
-    if (!dragStart.current) return;
+  const handleCenterDragEnd = (ev: L.LeafletEvent) => {
     const ll = (ev.target as L.Marker).getLatLng();
-    const dLat = ll.lat - dragStart.current.lat;
-    const dLng = ll.lng - dragStart.current.lng;
+    const oldCenterLat = (s + n) / 2;
+    const oldCenterLng = (w + e) / 2;
+    const dLat = ll.lat - oldCenterLat;
+    const dLng = ll.lng - oldCenterLng;
     onChange([s + dLat, w + dLng, n + dLat, e + dLng]);
-    dragStart.current = { lat: ll.lat, lng: ll.lng };
   };
 
   return (
@@ -110,10 +106,11 @@ export function OverlayEditor({ bounds, onChange }: Props) {
           [n, w],
         ]}
         pathOptions={{
-          color: cornerColor,
+          color: "#facc15",
           weight: 2,
           dashArray: "6 4",
           opacity: 0.9,
+          interactive: false,
         }}
       />
       {(["nw", "ne", "se", "sw"] as CornerKey[]).map((key) => (
@@ -121,12 +118,9 @@ export function OverlayEditor({ bounds, onChange }: Props) {
           key={key}
           position={corners[key]}
           draggable
-          icon={cornerIcon(cornerColor)}
+          icon={cornerIcon}
           eventHandlers={{
-            drag: (ev) => {
-              const ll = (ev.target as L.Marker).getLatLng();
-              updateCorner(key, ll.lat, ll.lng);
-            },
+            dragend: (ev) => handleCornerDragEnd(key, ev),
           }}
         />
       ))}
@@ -135,8 +129,7 @@ export function OverlayEditor({ bounds, onChange }: Props) {
         draggable
         icon={centerIcon}
         eventHandlers={{
-          dragstart: onCenterDragStart,
-          drag: onCenterDrag,
+          dragend: handleCenterDragEnd,
         }}
       />
     </>
