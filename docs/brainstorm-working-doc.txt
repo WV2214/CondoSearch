@@ -1,0 +1,92 @@
+CONDO SEARCH - BRAINSTORM WORKING DOC
+Started: 2026-04-27
+
+
+PURPOSE
+
+Personal web app to streamline Houston condo hunting. Consolidates listings from multiple sites onto one map with a CrimeGrade overlay so the user can see at a glance which areas are safest, then click pins to open the original listings. Used on both laptop and phone (especially while touring).
+
+
+CORE DECISIONS LOCKED IN
+
+Crime overlay
+    Static raster image of the CrimeGrade.org Houston map, geo-referenced so it lines up with the real interactive map underneath.
+    Real interactive map sits below it (so zoom-in still looks clean).
+    Overlay auto-fades when zoomed in past a neighborhood-level threshold, plus a manual toggle button.
+    Reason for not generating a custom heatmap from FBI/HPD data: CrimeGrade's normalization by population is more trustworthy than a from-scratch incident-density map, and it is what the user already trusts.
+
+Adding a property (hybrid)
+    User pastes a listing URL.
+    Backend tries to auto-extract address, price, beds/baths, and the Open Graph hero image.
+    If extraction fails or fields are wrong, user fills in / corrects them by hand.
+
+Per-property data tracked
+    Address, price, beds/baths
+    Listing URL (clickable)
+    One photo (Open Graph hero image scraped from the listing; user can replace with manual upload)
+    Tour status: Not toured / Scheduled / Toured / Rejected / Top pick
+    Free-form notes
+    Star rating 1 to 5
+    Pros / cons list
+    Comparison view: side-by-side table of all saved properties
+
+Photo strategy
+    Just the one Open Graph hero image per property. User clicks the listing link to see the rest. Playwright dropped — keeps the stack on Vercel serverless with no separate backend needed.
+
+Hosting and stack
+    Frontend: Next.js on Vercel
+    Database and auth and image storage: Supabase free tier
+    Reachable from phone and laptop via the Vercel URL
+    Docker considered and rejected for this project — would require user's machine to be on and reachable; cloud Supabase is simpler and free for one user.
+
+
+DECIDED IN DESIGN PASS
+
+Stack
+    Next.js on Vercel (one project, frontend + serverless API routes).
+    Supabase free tier for Postgres, Auth (single user, email + password), and Storage (cached listing photos).
+    Leaflet with free OpenStreetMap tiles for the base map. No Mapbox.
+    Row-level security so the database is locked to the user's account.
+
+API routes
+    POST /api/properties/scrape — fetches listing URL server-side, parses address / price / beds / baths / og:image, returns to client for review.
+    POST /api/properties — saves confirmed property; downloads the og:image into Supabase Storage so it survives the listing being removed.
+    GET /api/properties — returns all saved properties for the map and sidebar.
+
+Map page
+    Base layer: Leaflet + OSM tiles.
+    Crime overlay layer: one PNG screenshot of CrimeGrade.org Houston, rendered via Leaflet ImageOverlay at fixed lat/lng bounds. Default opacity ~0.65. Auto-hides above zoom level 15. Manual toggle button overrides auto-hide either way.
+    Pin layer: colored markers per property — gray Not toured, blue Scheduled, green Toured, red Rejected, gold Top pick. Click opens a popup with photo, address, price, beds/baths, rating, plus "Open listing" and "Edit / view full details" buttons.
+    Floating "+ Add property" button opens a modal: paste URL, scrape runs, user reviews/corrects fields, saves.
+    Helper script provided to capture the CrimeGrade screenshot and record its lat/lng bounds.
+
+Sidebar (right side of map page)
+    Scrollable list of all properties.
+    Each list item: photo thumbnail, address, price, beds/baths, status badge color-matched to pin, star rating. Click pans the map to that pin and opens its popup. Small "open" icon on each item opens the listing URL directly.
+    Top of sidebar has a filter (by status) and sort control. Default sort: status (Top pick first), then rating descending. Other sorts: price, rating, date added.
+    Mobile layout: sidebar collapses to a draggable bottom sheet, peeked by default, drag up to expand. Map stays dominant.
+
+
+SUPABASE PROJECT (created 2026-04-27)
+
+Project name: CONDO SEARCH
+Project ID: qzhkwftjsqvwnogrqseb
+Project URL: https://qzhkwftjsqvwnogrqseb.supabase.co
+Owner: wv2214@pm.me
+Org tier: Free
+Branch: main (production)
+
+API keys still to be pulled from the API Keys settings page when wiring env vars:
+    NEXT_PUBLIC_SUPABASE_URL (the URL above)
+    NEXT_PUBLIC_SUPABASE_ANON_KEY
+    SUPABASE_SERVICE_ROLE_KEY (server only — never exposed to client)
+
+
+STILL TO DECIDE
+
+Whether to track tour appointments (date, time, agent contact) on top of tour status — likely defer.
+
+
+OPEN QUESTIONS / NOTES
+
+User said "I don't want to spend too long on this" — keep scope tight, defer nice-to-haves.
