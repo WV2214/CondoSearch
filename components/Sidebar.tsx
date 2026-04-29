@@ -14,6 +14,7 @@ import {
   geocodeAddress,
   type Destination,
 } from "@/lib/travel-time";
+import { hasInUnitLaundry } from "@/lib/property-helpers";
 
 const STATUS_COLOR: Record<TourStatus, string> = {
   not_toured: "#71717a",
@@ -68,6 +69,7 @@ interface SidebarProps {
   pickingForId?: string | null;
   onStartPick?: (id: string | null) => void;
   onClearOverride?: (id: string) => void;
+  selectedId?: string | null;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -136,6 +138,7 @@ function SidebarBody({
   pickingForId,
   onStartPick,
   onClearOverride,
+  selectedId,
 }: SidebarProps) {
   const router = useRouter();
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -151,6 +154,16 @@ function SidebarBody({
   const [montroseMins, setMontroseMins] = useState<
     Record<string, number | null>
   >({});
+  const [favOverride, setFavOverride] = useState<Record<string, boolean>>({});
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = rowRefs.current[selectedId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selectedId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,6 +295,30 @@ function SidebarBody({
       );
     } finally {
       setUploadingId(null);
+    }
+  };
+
+  const toggleFavorite = async (propertyId: string, current: boolean) => {
+    const next = !current;
+    setFavOverride((prev) => ({ ...prev, [propertyId]: next }));
+    try {
+      const res = await fetch(`/api/properties/${propertyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_favorite: next }),
+      });
+      if (!res.ok) {
+        setFavOverride((prev) => ({ ...prev, [propertyId]: current }));
+        const msg = await res.text().catch(() => "");
+        window.alert(`Favorite update failed: ${res.status} ${msg}`);
+        return;
+      }
+      onChanged?.();
+    } catch (err) {
+      setFavOverride((prev) => ({ ...prev, [propertyId]: current }));
+      window.alert(
+        `Favorite update failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
@@ -510,9 +547,13 @@ function SidebarBody({
           const isUploading = uploadingId === p.id;
           const isReorderTarget = reorderDropId === p.id && reorderDragId !== p.id;
           const isBeingDragged = reorderDragId === p.id;
+          const isSelected = selectedId === p.id;
           return (
             <div
               key={p.id}
+              ref={(el) => {
+                rowRefs.current[p.id] = el;
+              }}
               onClick={() => onSelect(p)}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -572,6 +613,8 @@ function SidebarBody({
                   ? "opacity-40"
                   : isDragOver && !reorderDragId
                   ? "bg-emerald-900/40 ring-2 ring-emerald-400 ring-inset"
+                  : isSelected
+                  ? "bg-sky-950/30 ring-2 ring-sky-400 ring-inset"
                   : "hover:bg-zinc-900"
               }`}
             >
@@ -649,6 +692,16 @@ function SidebarBody({
                   {p.price ? `$${p.price.toLocaleString()}` : "—"}
                   {p.beds != null && ` · ${p.beds}bd`}
                   {p.baths != null && ` ${p.baths}ba`}
+                  {p.square_feet != null &&
+                    ` · ${p.square_feet.toLocaleString()} sqft`}
+                  {hasInUnitLaundry(p.pros) && (
+                    <span
+                      className="ml-1.5 font-semibold text-sky-400"
+                      title="In-unit washer/dryer"
+                    >
+                      W/D
+                    </span>
+                  )}
                 </div>
                 {montroseMins[p.id] != null && (
                   <div className="text-xs text-zinc-500">
@@ -694,6 +747,39 @@ function SidebarBody({
                 </div>
               </div>
               <div className="flex flex-col gap-1 items-end self-start">
+                {(() => {
+                  const isFav = favOverride[p.id] ?? p.is_favorite;
+                  return (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void toggleFavorite(p.id, isFav);
+                      }}
+                      className={`leading-none transition ${
+                        isFav
+                          ? "text-rose-500 hover:text-rose-400"
+                          : "text-zinc-600 hover:text-rose-400"
+                      }`}
+                      aria-label={isFav ? "Unfavorite" : "Favorite"}
+                      title={isFav ? "Unfavorite" : "Favorite"}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill={isFav ? "currentColor" : "none"}
+                        stroke="currentColor"
+                        strokeWidth={isFav ? 0 : 2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                      </svg>
+                    </button>
+                  );
+                })()}
                 <Link
                   href={`/properties/${p.id}`}
                   onClick={(e) => e.stopPropagation()}

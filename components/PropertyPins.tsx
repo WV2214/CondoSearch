@@ -13,6 +13,7 @@ import {
   getOverride,
   subscribeOverrides,
 } from "@/lib/overlay-color-overrides";
+import { hasInUnitLaundry } from "@/lib/property-helpers";
 
 const STATUS_COLOR: Record<TourStatus, string> = {
   not_toured: "#71717a",
@@ -41,9 +42,11 @@ function pinIcon(crimeColor: string, statusColor: string, dragging: boolean) {
 export function PropertyPins({
   properties,
   onMoved,
+  onPinClick,
 }: {
   properties: Property[];
   onMoved: () => void;
+  onPinClick?: (id: string) => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<
@@ -51,6 +54,26 @@ export function PropertyPins({
   >({});
   const [crimeColors, setCrimeColors] = useState<Record<string, string>>({});
   const [overrideTick, setOverrideTick] = useState(0);
+  const [favOverride, setFavOverride] = useState<Record<string, boolean>>({});
+
+  const toggleFavorite = async (propertyId: string, current: boolean) => {
+    const next = !current;
+    setFavOverride((prev) => ({ ...prev, [propertyId]: next }));
+    try {
+      const res = await fetch(`/api/properties/${propertyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_favorite: next }),
+      });
+      if (!res.ok) {
+        setFavOverride((prev) => ({ ...prev, [propertyId]: current }));
+        return;
+      }
+      onMoved();
+    } catch {
+      setFavOverride((prev) => ({ ...prev, [propertyId]: current }));
+    }
+  };
 
   useEffect(() => {
     return subscribeOverrides(() => setOverrideTick((n) => n + 1));
@@ -132,79 +155,195 @@ export function PropertyPins({
                 const ll = m.getLatLng();
                 handleDragEnd(p.id, ll.lat, ll.lng);
               },
+              click: () => {
+                onPinClick?.(p.id);
+              },
             }}
           >
             <Popup>
-              <div className="space-y-2 w-56 text-zinc-100">
-                {p.photo_path && (
-                  <img
-                    src={publicPhotoUrl(p.photo_path)}
-                    alt={p.address}
-                    className="w-full h-32 object-cover rounded"
-                  />
-                )}
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">{p.address}</span>
-                  <OverlayColorSwatch
-                    lat={lat}
-                    lng={lng}
-                    size={10}
-                    propertyId={p.id}
-                  />
-                </div>
-                <div className="text-sm text-zinc-300">
-                  {p.price ? `$${p.price.toLocaleString()}/mo` : "Price unknown"}
-                  {p.beds != null && ` · ${p.beds}bd`}
-                  {p.baths != null && ` ${p.baths}ba`}
-                </div>
-                {p.star_rating && (
-                  <div className="text-sm text-amber-300">
-                    {"★".repeat(p.star_rating)}
-                  </div>
-                )}
-                {isEditing ? (
-                  <div className="space-y-2 pt-2">
-                    <div className="text-xs text-amber-300">
-                      Drag the pin to move it. Drop to save.
-                    </div>
-                    <button
-                      onClick={() => cancelEdit(p.id)}
-                      className="w-full border border-zinc-600 text-zinc-100 rounded px-2 py-1 text-xs hover:bg-zinc-800"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2 pt-2">
-                    {p.listing_urls[0] && (
-                      <a
-                        href={p.listing_urls[0]}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex-1 text-center bg-zinc-100 text-zinc-900 rounded px-2 py-1 text-xs font-medium"
-                      >
-                        Open listing
-                      </a>
-                    )}
-                    <button
-                      onClick={() => setEditingId(p.id)}
-                      className="flex-1 text-center border border-amber-700 text-amber-200 rounded px-2 py-1 text-xs hover:bg-amber-950/40"
-                    >
-                      Move pin
-                    </button>
-                    <Link
-                      href={`/properties/${p.id}`}
-                      className="flex-1 text-center border border-zinc-600 text-zinc-100 rounded px-2 py-1 text-xs"
-                    >
-                      Details
-                    </Link>
-                  </div>
-                )}
-              </div>
+              <PopupBody
+                p={p}
+                lat={lat}
+                lng={lng}
+                isEditing={isEditing}
+                isFavorite={favOverride[p.id] ?? p.is_favorite}
+                onToggleFavorite={() =>
+                  toggleFavorite(
+                    p.id,
+                    favOverride[p.id] ?? p.is_favorite,
+                  )
+                }
+                onStartEdit={() => setEditingId(p.id)}
+                onCancelEdit={() => cancelEdit(p.id)}
+              />
             </Popup>
           </Marker>
         );
       })}
     </>
+  );
+}
+
+function PopupBody({
+  p,
+  lat,
+  lng,
+  isEditing,
+  isFavorite,
+  onToggleFavorite,
+  onStartEdit,
+  onCancelEdit,
+}: {
+  p: Property;
+  lat: number;
+  lng: number;
+  isEditing: boolean;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+}) {
+  const isApartment = p.property_type === "apartment";
+  const wd = hasInUnitLaundry(p.pros);
+  return (
+    <div className="space-y-2.5 w-64 text-zinc-100">
+      {p.photo_path && (
+        <div className="relative">
+          <img
+            src={publicPhotoUrl(p.photo_path)}
+            alt={p.address}
+            className="w-full h-32 object-cover rounded"
+          />
+          {isApartment && (
+            <span className="absolute top-1.5 left-1.5 px-1.5 py-[2px] rounded text-[10px] font-semibold tracking-wider uppercase bg-amber-400 text-zinc-900 shadow">
+              Apt
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            className={`absolute top-1.5 right-1.5 rounded-full p-1 transition ${
+              isFavorite
+                ? "bg-zinc-900/60 text-rose-500 hover:text-rose-400"
+                : "bg-zinc-900/60 text-zinc-300 hover:text-rose-400"
+            }`}
+            aria-label={isFavorite ? "Unfavorite" : "Favorite"}
+            title={isFavorite ? "Unfavorite" : "Favorite"}
+          >
+            <HeartIcon filled={isFavorite} />
+          </button>
+        </div>
+      )}
+      <div className="flex items-start gap-2">
+        <span className="font-semibold leading-tight">{p.address}</span>
+        <OverlayColorSwatch
+          lat={lat}
+          lng={lng}
+          size={10}
+          propertyId={p.id}
+        />
+        {!p.photo_path && (
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            className={`ml-auto shrink-0 leading-none transition ${
+              isFavorite
+                ? "text-rose-500 hover:text-rose-400"
+                : "text-zinc-500 hover:text-rose-400"
+            }`}
+            aria-label={isFavorite ? "Unfavorite" : "Favorite"}
+            title={isFavorite ? "Unfavorite" : "Favorite"}
+          >
+            <HeartIcon filled={isFavorite} />
+          </button>
+        )}
+      </div>
+      <div className="text-sm text-zinc-300">
+        {p.price ? `$${p.price.toLocaleString()}/mo` : "Price unknown"}
+        {p.beds != null && ` · ${p.beds}bd`}
+        {p.baths != null && ` ${p.baths}ba`}
+        {p.square_feet != null &&
+          ` · ${p.square_feet.toLocaleString()} sqft`}
+        {wd && (
+          <span
+            className="ml-1.5 font-semibold text-sky-400"
+            title="In-unit washer/dryer"
+          >
+            W/D
+          </span>
+        )}
+        {!p.photo_path && isApartment && (
+          <span className="ml-1.5 px-1.5 py-[1px] rounded text-[10px] font-semibold tracking-wider uppercase bg-amber-400 text-zinc-900 align-middle">
+            Apt
+          </span>
+        )}
+      </div>
+      {p.star_rating && (
+        <div className="text-sm text-amber-300">
+          {"★".repeat(p.star_rating)}
+        </div>
+      )}
+      {isEditing ? (
+        <div className="space-y-2 pt-1">
+          <div className="text-xs text-amber-300">
+            Drag the pin to move it. Drop to save.
+          </div>
+          <button
+            onClick={onCancelEdit}
+            className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-zinc-700 hover:border-zinc-500 transition"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5 pt-1">
+          {p.listing_urls[0] ? (
+            <a
+              href={p.listing_urls[0]}
+              target="_blank"
+              rel="noreferrer"
+              className="text-center bg-zinc-100 text-zinc-900 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-white transition"
+            >
+              Listing
+            </a>
+          ) : (
+            <span className="text-center bg-zinc-800 border border-zinc-700 text-zinc-500 rounded-md px-2 py-1.5 text-xs font-medium cursor-not-allowed">
+              Listing
+            </span>
+          )}
+          <Link
+            href={`/properties/${p.id}`}
+            className="text-center bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-zinc-700 hover:border-zinc-500 transition"
+          >
+            Details
+          </Link>
+          <button
+            type="button"
+            onClick={onStartEdit}
+            className="text-center bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-zinc-700 hover:border-zinc-500 transition"
+          >
+            Move
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={filled ? 0 : 2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
   );
 }

@@ -43,6 +43,7 @@ export default function MapView() {
     | { kind: "miss" }
     | null
   >(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
 
   // Hydrate from localStorage on mount
@@ -68,6 +69,7 @@ export default function MapView() {
   }, [refresh]);
 
   const onSelect = (p: Property) => {
+    setSelectedId(p.id);
     mapRef.current?.flyTo([p.latitude, p.longitude], 16, { duration: 0.6 });
   };
 
@@ -155,7 +157,11 @@ export default function MapView() {
               onMissed={handleMissed}
             />
           )}
-          <PropertyPins properties={properties} onMoved={refresh} />
+          <PropertyPins
+            properties={properties}
+            onMoved={refresh}
+            onPinClick={setSelectedId}
+          />
         </MapContainer>
         {(pickingProperty || pickFlash) && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1100] flex items-center gap-3 bg-zinc-900/95 text-zinc-100 border border-amber-500/60 shadow-lg rounded px-4 py-2 text-sm">
@@ -276,6 +282,7 @@ export default function MapView() {
         pickingForId={pickingForId}
         onStartPick={setPickingForId}
         onClearOverride={handleClearOverride}
+        selectedId={selectedId}
       />
     </div>
   );

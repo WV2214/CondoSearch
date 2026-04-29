@@ -34,6 +34,8 @@ export const propertySchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   rank: z.number().int().nullable(),
+  is_favorite: z.boolean(),
+  is_disliked: z.boolean(),
 });
 export type Property = z.infer<typeof propertySchema>;
 
@@ -70,5 +72,8 @@ export const propertyPatchSchema = z.object({
   photo_path: z.string().nullable().optional(),
   rank: z.number().int().nullable().optional(),
   property_type: propertyTypeSchema.optional(),
+  is_favorite: z.boolean().optional(),
+  is_disliked: z.boolean().optional(),
+  listing_urls: z.array(z.string().url()).optional(),
 });
 export type PropertyPatch = z.infer<typeof propertyPatchSchema>;
