@@ -10,6 +10,9 @@ export const tourStatusSchema = z.enum([
 ]);
 export type TourStatus = z.infer<typeof tourStatusSchema>;
 
+export const propertyTypeSchema = z.enum(["condo", "apartment"]);
+export type PropertyType = z.infer<typeof propertyTypeSchema>;
+
 export const propertySchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -22,6 +25,7 @@ export const propertySchema = z.object({
   baths: z.number().nullable(),
   square_feet: z.number().int().nullable(),
   photo_path: z.string().nullable(),
+  property_type: propertyTypeSchema,
   tour_status: tourStatusSchema,
   star_rating: z.number().int().min(1).max(5).nullable(),
   notes: z.string(),
@@ -46,6 +50,7 @@ export const propertyInsertSchema = z
     photo_path: z.string().nullable(),
     photo_source_url: z.string().url().nullable().optional(),
     pros: z.array(z.string()).optional(),
+    property_type: propertyTypeSchema.optional(),
   });
 export type PropertyInsert = z.infer<typeof propertyInsertSchema>;
 
@@ -64,5 +69,6 @@ export const propertyPatchSchema = z.object({
   square_feet: z.number().int().nullable().optional(),
   photo_path: z.string().nullable().optional(),
   rank: z.number().int().nullable().optional(),
+  property_type: propertyTypeSchema.optional(),
 });
 export type PropertyPatch = z.infer<typeof propertyPatchSchema>;

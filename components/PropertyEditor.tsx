@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Property, TourStatus } from "@/lib/types/property";
+import type { Property, PropertyType, TourStatus } from "@/lib/types/property";
 import { publicPhotoUrl } from "./photo-url";
 import { OverlayColorSwatch } from "./OverlayColorSwatch";
 
@@ -166,6 +166,28 @@ export function PropertyEditor({ initial }: { initial: Property }) {
         </div>
 
         <section className="grid grid-cols-2 gap-4">
+          <label className="block col-span-2">
+            <span className="text-sm text-zinc-300">Property type</span>
+            <div className="mt-1 flex gap-2">
+              {(["condo", "apartment"] as PropertyType[]).map((t) => {
+                const active = p.property_type === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => patch({ property_type: t })}
+                    className={`flex-1 rounded border px-3 py-2 text-sm transition ${
+                      active
+                        ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                        : "bg-zinc-900 text-zinc-300 border-zinc-700 hover:border-zinc-500"
+                    }`}
+                  >
+                    {t === "condo" ? "Condo" : "Apartment"}
+                  </button>
+                );
+              })}
+            </div>
+          </label>
           <label className="block">
             <span className="text-sm text-zinc-300">Tour status</span>
             <select

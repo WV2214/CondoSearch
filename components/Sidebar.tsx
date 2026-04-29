@@ -285,6 +285,73 @@ function SidebarBody({
     }
   };
 
+  const handlePasteImage = async (propertyId: string) => {
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      window.alert(
+        "Clipboard image reading isn't supported in this browser. Try dragging the image onto the row instead.",
+      );
+      return;
+    }
+    setUploadingId(propertyId);
+    try {
+      const items = await navigator.clipboard.read();
+      let blob: Blob | null = null;
+      let textFallback: string | null = null;
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          blob = await item.getType(imageType);
+          break;
+        }
+        if (item.types.includes("text/plain")) {
+          const t = await (await item.getType("text/plain")).text();
+          if (/^https?:\/\//i.test(t.trim())) textFallback = t.trim();
+        }
+      }
+
+      let res: Response;
+      if (blob) {
+        const file = new File([blob], "pasted.png", {
+          type: blob.type || "image/png",
+        });
+        const fd = new FormData();
+        fd.append("file", file);
+        res = await fetch(`/api/properties/${propertyId}/photo`, {
+          method: "POST",
+          body: fd,
+        });
+      } else if (textFallback) {
+        res = await fetch(`/api/properties/${propertyId}/photo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_url: textFallback }),
+        });
+      } else {
+        window.alert(
+          "No image found on the clipboard. Copy an image (or image URL) and try again.",
+        );
+        return;
+      }
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        window.alert(`Photo replace failed: ${res.status} ${msg}`);
+        return;
+      }
+      onChanged?.();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/permission|denied|notallowed/i.test(msg)) {
+        window.alert(
+          "Clipboard read was blocked. Allow clipboard access for this site, then try again.",
+        );
+      } else {
+        window.alert(`Paste failed: ${msg}`);
+      }
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
   const handleDelete = async (propertyId: string, address: string) => {
     if (!window.confirm(`Delete "${address}"? This cannot be undone.`)) return;
     const res = await fetch(`/api/properties/${propertyId}`, {
@@ -555,6 +622,14 @@ function SidebarBody({
                     }`}
                   />
                 )}
+                {p.property_type === "apartment" && (
+                  <span
+                    className="absolute top-0 left-0 px-1 py-[1px] rounded-tl rounded-br text-[9px] font-semibold tracking-wider uppercase bg-amber-400 text-zinc-900 shadow pointer-events-none"
+                    title="Apartment"
+                  >
+                    Apt
+                  </span>
+                )}
                 {isUploading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded text-[10px] text-zinc-100">
                     Uploading…
@@ -668,6 +743,16 @@ function SidebarBody({
             }}
           >
             Edit
+          </button>
+          <button
+            className="w-full text-left px-3 py-2 hover:bg-zinc-800"
+            onClick={() => {
+              const id = menu.propertyId;
+              setMenu(null);
+              void handlePasteImage(id);
+            }}
+          >
+            Paste image
           </button>
           <button
             className="w-full text-left px-3 py-2 text-red-400 hover:bg-zinc-800"

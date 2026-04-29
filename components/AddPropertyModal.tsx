@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import type { PropertyType } from "@/lib/types/property";
 
 const ManualGeoPicker = dynamic(() => import("./ManualGeoPicker"), {
   ssr: false,
@@ -67,6 +68,7 @@ export function AddPropertyModal({
   const [selectedAmenities, setSelectedAmenities] = useState<Set<string>>(
     new Set(),
   );
+  const [propertyType, setPropertyType] = useState<PropertyType>("condo");
 
   const safeJson = async (res: Response): Promise<Record<string, unknown>> => {
     const text = await res.text();
@@ -311,6 +313,7 @@ export function AddPropertyModal({
           square_feet: sqft ? parseInt(sqft, 10) : null,
           photo_path: null,
           photo_source_url: data?.scraped.photo_url ?? null,
+          property_type: propertyType,
           ...(prosFromAmenities.length > 0
             ? { pros: prosFromAmenities }
             : {}),
@@ -464,6 +467,27 @@ export function AddPropertyModal({
                   </select>
                 </div>
               )}
+            </Field>
+            <Field label="Property type">
+              <div className="flex gap-2">
+                {(["condo", "apartment"] as PropertyType[]).map((t) => {
+                  const active = propertyType === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setPropertyType(t)}
+                      className={`flex-1 rounded border px-3 py-2 text-sm transition ${
+                        active
+                          ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                          : "bg-zinc-900 text-zinc-300 border-zinc-700 hover:border-zinc-500"
+                      }`}
+                    >
+                      {t === "condo" ? "Condo" : "Apartment"}
+                    </button>
+                  );
+                })}
+              </div>
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Price ($/mo)">
