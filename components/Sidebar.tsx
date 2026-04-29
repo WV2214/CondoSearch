@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import type { Property, TourStatus } from "@/lib/types/property";
 import { publicPhotoUrl } from "./photo-url";
 import { OverlayColorSwatch } from "./OverlayColorSwatch";
@@ -15,39 +13,12 @@ import {
   type Destination,
 } from "@/lib/travel-time";
 import { hasInUnitLaundry } from "@/lib/property-helpers";
-
-const STATUS_COLOR: Record<TourStatus, string> = {
-  not_toured: "#71717a",
-  called: "#fb923c",
-  scheduled: "#60a5fa",
-  toured: "#4ade80",
-  rejected: "#f87171",
-  top_pick: "#facc15",
-};
-const STATUS_LABEL: Record<TourStatus, string> = {
-  not_toured: "Not toured",
-  called: "Called",
-  scheduled: "Scheduled",
-  toured: "Toured",
-  rejected: "Rejected",
-  top_pick: "Top pick",
-};
-const STATUS_RANK: Record<TourStatus, number> = {
-  top_pick: 0,
-  scheduled: 1,
-  called: 2,
-  toured: 3,
-  not_toured: 4,
-  rejected: 5,
-};
-const STATUS_CYCLE: TourStatus[] = [
-  "not_toured",
-  "called",
-  "scheduled",
-  "toured",
-  "top_pick",
-  "rejected",
-];
+import {
+  STATUS_COLOR,
+  STATUS_LABEL,
+  STATUS_RANK,
+  STATUS_CYCLE,
+} from "@/lib/status-display";
 
 export type SortKey =
   | "default"
@@ -55,7 +26,6 @@ export type SortKey =
   | "price_desc"
   | "rating"
   | "date"
-  | "my_ranking"
   | "commute_asc";
 
 interface SidebarProps {
@@ -70,10 +40,78 @@ interface SidebarProps {
   onStartPick?: (id: string | null) => void;
   onClearOverride?: (id: string) => void;
   selectedId?: string | null;
+  onEditRequest?: (id: string) => void;
 }
+
+const COLLAPSED_PEEK_PX = 128;
 
 export function Sidebar(props: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const touchStartY = useRef<number | null>(null);
+  const startedExpanded = useRef(false);
+  const wasTouched = useRef(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    wasTouched.current = true;
+    touchStartY.current = e.touches[0].clientY;
+    startedExpanded.current = expanded;
+    setDragging(true);
+    setDragOffset(0);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartY.current == null) return;
+    let dy = e.touches[0].clientY - touchStartY.current;
+    const maxCollapse = window.innerHeight * 0.8 - COLLAPSED_PEEK_PX;
+    if (startedExpanded.current) {
+      dy = Math.max(0, Math.min(maxCollapse, dy));
+    } else {
+      dy = Math.max(-maxCollapse, Math.min(0, dy));
+    }
+    setDragOffset(dy);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartY.current == null) return;
+    const dy = dragOffset;
+    const wasExpanded = startedExpanded.current;
+    setDragging(false);
+    setDragOffset(0);
+    touchStartY.current = null;
+
+    if (Math.abs(dy) < 8) {
+      setExpanded((v) => !v);
+      return;
+    }
+    const threshold = window.innerHeight * 0.1;
+    if (wasExpanded) {
+      setExpanded(dy < threshold);
+    } else {
+      setExpanded(dy < -threshold);
+    }
+  };
+
+  const handleClick = () => {
+    if (wasTouched.current) {
+      wasTouched.current = false;
+      return;
+    }
+    setExpanded((v) => !v);
+  };
+
+  let transform: string;
+  if (dragging) {
+    const startTranslate = startedExpanded.current
+      ? "0px"
+      : `calc(80vh - ${COLLAPSED_PEEK_PX}px)`;
+    transform = `translateY(calc(${startTranslate} + ${dragOffset}px))`;
+  } else {
+    transform = expanded
+      ? "translateY(0)"
+      : `translateY(calc(80vh - ${COLLAPSED_PEEK_PX}px))`;
+  }
 
   return (
     <>
@@ -82,18 +120,25 @@ export function Sidebar(props: SidebarProps) {
       </aside>
 
       <div
-        className={`md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-zinc-800 text-zinc-100 shadow-2xl rounded-t-xl transition-[height] duration-300 z-[1500] ${
-          expanded ? "h-[80vh]" : "h-32"
+        className={`md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-zinc-800 text-zinc-100 shadow-2xl rounded-t-xl h-[80vh] z-[1500] ${
+          dragging ? "" : "transition-transform duration-300"
         }`}
+        style={{ transform, willChange: "transform" }}
       >
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full py-2 flex justify-center"
+        <div
+          onClick={handleClick}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          role="button"
           aria-label="Toggle property list"
+          className="w-full py-3 flex justify-center cursor-grab active:cursor-grabbing select-none"
+          style={{ touchAction: "none" }}
         >
           <div className="w-10 h-1 rounded-full bg-zinc-700" />
-        </button>
-        <div className="h-[calc(100%-32px)] flex flex-col">
+        </div>
+        <div className="h-[calc(100%-40px)] flex flex-col">
           <SidebarBody {...props} />
         </div>
       </div>
@@ -139,13 +184,10 @@ function SidebarBody({
   onStartPick,
   onClearOverride,
   selectedId,
+  onEditRequest,
 }: SidebarProps) {
-  const router = useRouter();
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const [reorderDragId, setReorderDragId] = useState<string | null>(null);
-  const [reorderDropId, setReorderDropId] = useState<string | null>(null);
-  const reorderDragIdRef = useRef<string | null>(null);
   const [commuteDest, setCommuteDest] = useState<Destination>(getCommuteDest);
   const [editingDest, setEditingDest] = useState(false);
   const [destQuery, setDestQuery] = useState("");
@@ -155,6 +197,9 @@ function SidebarBody({
     Record<string, number | null>
   >({});
   const [favOverride, setFavOverride] = useState<Record<string, boolean>>({});
+  const [dislikeOverride, setDislikeOverride] = useState<
+    Record<string, boolean>
+  >({});
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -212,6 +257,13 @@ function SidebarBody({
   const filtered = properties.filter((p) =>
     filter.size === 0 ? true : filter.has(p.tour_status),
   );
+  const tier = (p: Property) => {
+    const fav = favOverride[p.id] ?? p.is_favorite;
+    const down = dislikeOverride[p.id] ?? p.is_disliked;
+    if (fav) return 0;
+    if (down) return 2;
+    return 1;
+  };
   const sorted = [...filtered].sort((a, b) => {
     switch (sort) {
       case "price_asc":
@@ -227,16 +279,10 @@ function SidebarBody({
         const bm = montroseMins[b.id] ?? Infinity;
         return am - bm;
       }
-      case "my_ranking": {
-        if (a.rank == null && b.rank == null) return 0;
-        if (a.rank == null) return 1;
-        if (b.rank == null) return -1;
-        return a.rank - b.rank;
-      }
       default: {
-        const sd = STATUS_RANK[a.tour_status] - STATUS_RANK[b.tour_status];
-        if (sd !== 0) return sd;
-        return (b.star_rating ?? 0) - (a.star_rating ?? 0);
+        const td = tier(a) - tier(b);
+        if (td !== 0) return td;
+        return (a.price ?? Infinity) - (b.price ?? Infinity);
       }
     }
   });
@@ -318,6 +364,30 @@ function SidebarBody({
       setFavOverride((prev) => ({ ...prev, [propertyId]: current }));
       window.alert(
         `Favorite update failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  const toggleDislike = async (propertyId: string, current: boolean) => {
+    const next = !current;
+    setDislikeOverride((prev) => ({ ...prev, [propertyId]: next }));
+    try {
+      const res = await fetch(`/api/properties/${propertyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_disliked: next }),
+      });
+      if (!res.ok) {
+        setDislikeOverride((prev) => ({ ...prev, [propertyId]: current }));
+        const msg = await res.text().catch(() => "");
+        window.alert(`Downvote update failed: ${res.status} ${msg}`);
+        return;
+      }
+      onChanged?.();
+    } catch (err) {
+      setDislikeOverride((prev) => ({ ...prev, [propertyId]: current }));
+      window.alert(
+        `Downvote update failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   };
@@ -438,35 +508,6 @@ function SidebarBody({
     }
   };
 
-  const handleReorderDrop = async (draggedId: string, targetId: string) => {
-    if (draggedId === targetId) return;
-    const ids = sorted.map((p) => p.id);
-    const fromIdx = ids.indexOf(draggedId);
-    const toIdx = ids.indexOf(targetId);
-    if (fromIdx === -1 || toIdx === -1) return;
-    const newOrder = [...ids];
-    newOrder.splice(fromIdx, 1);
-    newOrder.splice(toIdx, 0, draggedId);
-    const responses = await Promise.all(
-      newOrder.map((id, idx) =>
-        fetch(`/api/properties/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rank: idx + 1 }),
-        }),
-      ),
-    );
-    const failed = responses.find((r) => !r.ok);
-    if (failed) {
-      const msg = await failed.text().catch(() => "");
-      window.alert(
-        `Reorder failed: ${failed.status} ${msg}\n\nThis usually means the 'rank' column hasn't been added to the database yet. Run: npx supabase db push`,
-      );
-      return;
-    }
-    onChanged?.();
-  };
-
   return (
     <>
       <div className="p-3 border-b border-zinc-800 space-y-2">
@@ -532,8 +573,7 @@ function SidebarBody({
           onChange={(e) => setSort(e.target.value as SortKey)}
           className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100"
         >
-          <option value="default">Sort: status, then rating</option>
-          <option value="my_ranking">My ranking</option>
+          <option value="default">Sort: favorites, cost, downvotes</option>
           <option value="price_asc">Price ascending</option>
           <option value="price_desc">Price descending</option>
           <option value="rating">Rating</option>
@@ -542,12 +582,11 @@ function SidebarBody({
         </select>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {sorted.map((p, idx) => {
+        {sorted.map((p) => {
           const isDragOver = dragOverId === p.id;
           const isUploading = uploadingId === p.id;
-          const isReorderTarget = reorderDropId === p.id && reorderDragId !== p.id;
-          const isBeingDragged = reorderDragId === p.id;
           const isSelected = selectedId === p.id;
+          const isDownvoted = dislikeOverride[p.id] ?? p.is_disliked;
           return (
             <div
               key={p.id}
@@ -568,87 +607,33 @@ function SidebarBody({
               onDragEnter={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (reorderDragIdRef.current) {
-                  setReorderDropId(p.id);
-                } else {
-                  setDragOverId(p.id);
-                }
+                setDragOverId(p.id);
               }}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (reorderDragIdRef.current) {
-                  e.dataTransfer.dropEffect = "move";
-                } else {
-                  e.dataTransfer.dropEffect = "copy";
-                }
+                e.dataTransfer.dropEffect = "copy";
               }}
               onDragLeave={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                   setDragOverId(null);
-                  setReorderDropId(null);
                 }
               }}
               onDrop={(e) => {
-                if (reorderDragIdRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const draggedId = reorderDragIdRef.current;
-                  reorderDragIdRef.current = null;
-                  setReorderDropId(null);
-                  setReorderDragId(null);
-                  void handleReorderDrop(draggedId, p.id);
-                } else {
-                  void handleDrop(e, p.id);
-                }
+                void handleDrop(e, p.id);
               }}
               className={`flex gap-3 p-3 border-b border-zinc-800 cursor-pointer transition-colors ${
-                isReorderTarget
-                  ? "border-t-2 border-t-sky-500"
-                  : ""
-              } ${
-                isBeingDragged
-                  ? "opacity-40"
-                  : isDragOver && !reorderDragId
+                isDragOver
                   ? "bg-emerald-900/40 ring-2 ring-emerald-400 ring-inset"
                   : isSelected
                   ? "bg-sky-950/30 ring-2 ring-sky-400 ring-inset"
+                  : isDownvoted
+                  ? "opacity-60 hover:opacity-100 hover:bg-zinc-900"
                   : "hover:bg-zinc-900"
               }`}
             >
-              {sort === "my_ranking" && (
-                <div
-                  className="flex flex-col items-center justify-center w-5 shrink-0 gap-1 cursor-grab active:cursor-grabbing select-none"
-                  title="Drag to reorder"
-                  draggable
-                  onDragStart={(e) => {
-                    e.stopPropagation();
-                    reorderDragIdRef.current = p.id;
-                    setReorderDragId(p.id);
-                    e.dataTransfer.setData("text/plain", p.id);
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragEnd={() => {
-                    reorderDragIdRef.current = null;
-                    setReorderDragId(null);
-                    setReorderDropId(null);
-                  }}
-                >
-                  <span className="text-[11px] font-mono font-semibold text-zinc-300 leading-none">
-                    {idx + 1}
-                  </span>
-                  <div className="grid grid-cols-2 gap-[2px]">
-                    {[...Array(6)].map((_, i) => (
-                      <span
-                        key={i}
-                        className="w-[3px] h-[3px] rounded-full bg-zinc-600"
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
               <div className="relative w-16 h-16 shrink-0">
                 {p.photo_path ? (
                   <img
@@ -746,48 +731,7 @@ function SidebarBody({
                   />
                 </div>
               </div>
-              <div className="flex flex-col gap-1 items-end self-start">
-                {(() => {
-                  const isFav = favOverride[p.id] ?? p.is_favorite;
-                  return (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void toggleFavorite(p.id, isFav);
-                      }}
-                      className={`leading-none transition ${
-                        isFav
-                          ? "text-rose-500 hover:text-rose-400"
-                          : "text-zinc-600 hover:text-rose-400"
-                      }`}
-                      aria-label={isFav ? "Unfavorite" : "Favorite"}
-                      title={isFav ? "Unfavorite" : "Favorite"}
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill={isFav ? "currentColor" : "none"}
-                        stroke="currentColor"
-                        strokeWidth={isFav ? 0 : 2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                      </svg>
-                    </button>
-                  );
-                })()}
-                <Link
-                  href={`/properties/${p.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-sm text-zinc-500 hover:text-zinc-200 leading-none"
-                  title="Open details"
-                >
-                  →
-                </Link>
+              <div className="flex flex-col gap-1.5 items-end self-start">
                 {p.listing_urls[0] && (
                   <a
                     href={p.listing_urls[0]}
@@ -800,6 +744,81 @@ function SidebarBody({
                     ↗
                   </a>
                 )}
+                {(() => {
+                  const isFav = favOverride[p.id] ?? p.is_favorite;
+                  const isDown = dislikeOverride[p.id] ?? p.is_disliked;
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleFavorite(p.id, isFav);
+                        }}
+                        className={`leading-none transition ${
+                          isFav
+                            ? "text-rose-500 hover:text-rose-400"
+                            : "text-zinc-600 hover:text-rose-400"
+                        }`}
+                        aria-label={isFav ? "Unfavorite" : "Favorite"}
+                        title={isFav ? "Unfavorite" : "Favorite"}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill={isFav ? "currentColor" : "none"}
+                          stroke="currentColor"
+                          strokeWidth={isFav ? 0 : 2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleDislike(p.id, isDown);
+                        }}
+                        className={`leading-none transition ${
+                          isDown
+                            ? "text-orange-400 hover:text-orange-300"
+                            : "text-zinc-600 hover:text-orange-400"
+                        }`}
+                        aria-label={isDown ? "Remove downvote" : "Downvote"}
+                        title={isDown ? "Remove downvote" : "Downvote"}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill={isDown ? "currentColor" : "none"}
+                          stroke="currentColor"
+                          strokeWidth={isDown ? 0 : 2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
+                        </svg>
+                      </button>
+                    </>
+                  );
+                })()}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditRequest?.(p.id);
+                  }}
+                  className="text-[10px] font-semibold tracking-wider text-zinc-300 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded px-1.5 py-0.5 leading-none transition"
+                  title="Edit details"
+                >
+                  EDIT
+                </button>
               </div>
             </div>
           );
@@ -825,7 +844,7 @@ function SidebarBody({
             onClick={() => {
               const id = menu.propertyId;
               setMenu(null);
-              router.push(`/properties/${id}`);
+              onEditRequest?.(id);
             }}
           >
             Edit

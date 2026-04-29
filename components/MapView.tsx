@@ -12,6 +12,7 @@ import { AddPropertyButton } from "./AddPropertyButton";
 import { Sidebar, type SortKey } from "./Sidebar";
 import { OverlayEditor } from "./OverlayEditor";
 import { OverlayColorPicker } from "./OverlayColorPicker";
+import { PropertyEditModal } from "./PropertyEditModal";
 import { clearOverride } from "@/lib/overlay-color-overrides";
 import {
   CRIME_OVERLAY,
@@ -32,7 +33,7 @@ export default function MapView() {
     "auto",
   );
   const [filter, setFilter] = useState<Set<TourStatus>>(new Set());
-  const [sort, setSort] = useState<SortKey>("my_ranking");
+  const [sort, setSort] = useState<SortKey>("default");
   const [bounds, setBounds] = useState<Bounds>(CRIME_OVERLAY.bounds);
   const [opacity, setOpacity] = useState<number>(DEFAULT_OVERLAY_OPACITY);
   const [editing, setEditing] = useState(false);
@@ -44,7 +45,12 @@ export default function MapView() {
     | null
   >(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+
+  const editingProperty = editingId
+    ? properties.find((p) => p.id === editingId) ?? null
+    : null;
 
   // Hydrate from localStorage on mount
   useEffect(() => {
@@ -161,6 +167,7 @@ export default function MapView() {
             properties={properties}
             onMoved={refresh}
             onPinClick={setSelectedId}
+            onEdit={setEditingId}
           />
         </MapContainer>
         {(pickingProperty || pickFlash) && (
@@ -205,7 +212,18 @@ export default function MapView() {
           Compare
         </Link>
         <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2">
-          <div className="bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm flex flex-col gap-2 w-56">
+          <div className="relative bg-zinc-900/95 text-zinc-100 border border-zinc-700 shadow-lg rounded px-3 py-2 text-sm flex flex-col gap-2 w-56">
+            <button
+              onClick={() => setEditing(!editing)}
+              className={`absolute top-1 right-1 rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wider uppercase border transition ${
+                editing
+                  ? "bg-amber-400 text-zinc-900 border-amber-300 hover:bg-amber-300"
+                  : "bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:bg-zinc-700 hover:text-zinc-100"
+              }`}
+              title={editing ? "Done editing overlay" : "Edit overlay bounds"}
+            >
+              {editing ? "Done" : "Edit"}
+            </button>
             <button
               onClick={() =>
                 setOverlayMode(
@@ -216,12 +234,12 @@ export default function MapView() {
                       : "auto",
                 )
               }
-              className="text-left hover:text-amber-300"
+              className="text-left pr-12 hover:text-amber-300"
             >
               Crime overlay: {overlayMode}
             </button>
             <label className="flex items-center gap-2 text-xs text-zinc-400">
-              <span className="w-12 shrink-0">Opacity</span>
+              <span className="shrink-0">Opacity</span>
               <input
                 type="range"
                 min={0}
@@ -231,23 +249,13 @@ export default function MapView() {
                 onChange={(e) =>
                   handleOpacityChange(parseFloat(e.target.value))
                 }
-                className="flex-1 accent-amber-400"
+                className="flex-1 min-w-0 accent-amber-400"
               />
-              <span className="w-8 text-right text-zinc-300">
+              <span className="shrink-0 w-9 text-right tabular-nums text-zinc-300">
                 {Math.round(opacity * 100)}%
               </span>
             </label>
           </div>
-          <button
-            onClick={() => setEditing(!editing)}
-            className={`shadow-lg rounded px-3 py-2 text-sm border transition ${
-              editing
-                ? "bg-amber-400 text-zinc-900 border-amber-300 hover:bg-amber-300"
-                : "bg-zinc-900/95 text-zinc-100 border-zinc-700 hover:bg-zinc-800"
-            }`}
-          >
-            {editing ? "Done editing" : "Edit overlay"}
-          </button>
           {editing && (
             <div className="flex flex-col gap-2 bg-zinc-900/95 border border-zinc-700 rounded p-2 shadow-lg w-64 text-xs text-zinc-300">
               <div>
@@ -283,7 +291,16 @@ export default function MapView() {
         onStartPick={setPickingForId}
         onClearOverride={handleClearOverride}
         selectedId={selectedId}
+        onEditRequest={setEditingId}
       />
+      {editingProperty && (
+        <PropertyEditModal
+          property={editingProperty}
+          onClose={() => setEditingId(null)}
+          onChanged={refresh}
+          onDeleted={refresh}
+        />
+      )}
     </div>
   );
 }
