@@ -18,6 +18,7 @@ export const propertySchema = z.object({
   user_id: z.string().uuid(),
   listing_urls: z.array(z.string().url()),
   address: z.string().min(1),
+  complex_name: z.string(),
   latitude: z.number(),
   longitude: z.number(),
   price: z.number().int().nullable(),
@@ -36,6 +37,8 @@ export const propertySchema = z.object({
   rank: z.number().int().nullable(),
   is_favorite: z.boolean(),
   is_disliked: z.boolean(),
+  dislike_reason: z.string(),
+  availability_date: z.string().nullable(),
 });
 export type Property = z.infer<typeof propertySchema>;
 
@@ -43,6 +46,7 @@ export const propertyInsertSchema = z
   .object({
     listing_urls: z.array(z.string().url()),
     address: z.string().min(1),
+    complex_name: z.string().optional(),
     latitude: z.number(),
     longitude: z.number(),
     price: z.number().int().nullable(),
@@ -53,6 +57,7 @@ export const propertyInsertSchema = z
     photo_source_url: z.string().url().nullable().optional(),
     pros: z.array(z.string()).optional(),
     property_type: propertyTypeSchema.optional(),
+    availability_date: z.string().nullable().optional(),
   });
 export type PropertyInsert = z.infer<typeof propertyInsertSchema>;
 
@@ -63,6 +68,7 @@ export const propertyPatchSchema = z.object({
   pros: z.array(z.string()).optional(),
   cons: z.array(z.string()).optional(),
   address: z.string().optional(),
+  complex_name: z.string().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   price: z.number().int().nullable().optional(),
@@ -74,6 +80,8 @@ export const propertyPatchSchema = z.object({
   property_type: propertyTypeSchema.optional(),
   is_favorite: z.boolean().optional(),
   is_disliked: z.boolean().optional(),
+  dislike_reason: z.string().optional(),
+  availability_date: z.string().nullable().optional(),
   listing_urls: z.array(z.string().url()).optional(),
 });
 export type PropertyPatch = z.infer<typeof propertyPatchSchema>;

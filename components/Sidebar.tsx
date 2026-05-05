@@ -12,7 +12,12 @@ import {
   geocodeAddress,
   type Destination,
 } from "@/lib/travel-time";
-import { hasInUnitLaundry } from "@/lib/property-helpers";
+import {
+  hasInUnitLaundry,
+  formatAvailability,
+  isAvailabilityPast,
+  groupByComplexInOrder,
+} from "@/lib/property-helpers";
 import {
   STATUS_COLOR,
   STATUS_LABEL,
@@ -186,6 +191,7 @@ function SidebarBody({
   selectedId,
   onEditRequest,
 }: SidebarProps) {
+  const [query, setQuery] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [commuteDest, setCommuteDest] = useState<Destination>(getCommuteDest);
@@ -200,6 +206,21 @@ function SidebarBody({
   const [dislikeOverride, setDislikeOverride] = useState<
     Record<string, boolean>
   >({});
+  const [dislikeReasonOverride, setDislikeReasonOverride] = useState<
+    Record<string, string>
+  >({});
+  const [editingReasonFor, setEditingReasonFor] = useState<string | null>(null);
+  const [reasonDraft, setReasonDraft] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -254,9 +275,15 @@ function SidebarBody({
     };
   }, [menu]);
 
-  const filtered = properties.filter((p) =>
-    filter.size === 0 ? true : filter.has(p.tour_status),
-  );
+  const q = query.trim().toLowerCase();
+  const filtered = properties.filter((p) => {
+    if (filter.size > 0 && !filter.has(p.tour_status)) return false;
+    if (q.length > 0) {
+      const haystack = `${p.address} ${p.complex_name}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
   const tier = (p: Property) => {
     const fav = favOverride[p.id] ?? p.is_favorite;
     const down = dislikeOverride[p.id] ?? p.is_disliked;
@@ -368,14 +395,72 @@ function SidebarBody({
     }
   };
 
-  const toggleDislike = async (propertyId: string, current: boolean) => {
-    const next = !current;
-    setDislikeOverride((prev) => ({ ...prev, [propertyId]: next }));
+  const openReasonEditor = (propertyId: string, currentReason: string) => {
+    setReasonDraft(currentReason);
+    setEditingReasonFor(propertyId);
+  };
+
+  const closeReasonEditor = () => {
+    setEditingReasonFor(null);
+    setReasonDraft("");
+  };
+
+  const saveDislikeReason = async (
+    propertyId: string,
+    previousReason: string,
+  ) => {
+    const reason = reasonDraft.trim();
+    closeReasonEditor();
+    if (reason === previousReason) return;
+    setDislikeReasonOverride((prev) => ({ ...prev, [propertyId]: reason }));
     try {
       const res = await fetch(`/api/properties/${propertyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_disliked: next }),
+        body: JSON.stringify({ dislike_reason: reason }),
+      });
+      if (!res.ok) {
+        setDislikeReasonOverride((prev) => ({
+          ...prev,
+          [propertyId]: previousReason,
+        }));
+        const msg = await res.text().catch(() => "");
+        window.alert(`Reason update failed: ${res.status} ${msg}`);
+        return;
+      }
+      onChanged?.();
+    } catch (err) {
+      setDislikeReasonOverride((prev) => ({
+        ...prev,
+        [propertyId]: previousReason,
+      }));
+      window.alert(
+        `Reason update failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  const toggleDislike = async (
+    propertyId: string,
+    current: boolean,
+    currentReason: string,
+  ) => {
+    const next = !current;
+    setDislikeOverride((prev) => ({ ...prev, [propertyId]: next }));
+    if (next) {
+      openReasonEditor(propertyId, currentReason);
+    } else {
+      if (editingReasonFor === propertyId) closeReasonEditor();
+      setDislikeReasonOverride((prev) => ({ ...prev, [propertyId]: "" }));
+    }
+    try {
+      const res = await fetch(`/api/properties/${propertyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          is_disliked: next,
+          ...(next ? {} : { dislike_reason: "" }),
+        }),
       });
       if (!res.ok) {
         setDislikeOverride((prev) => ({ ...prev, [propertyId]: current }));
@@ -511,8 +596,47 @@ function SidebarBody({
   return (
     <>
       <div className="p-3 border-b border-zinc-800 space-y-2">
+        <div className="relative">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search address or complex name…"
+            className="w-full bg-zinc-900 border border-zinc-700 rounded pl-7 pr-7 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+          />
+          <svg
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200 px-1 leading-none"
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <div className="text-sm font-semibold">
           {filtered.length} properties
+          {q.length > 0 && (
+            <span className="ml-1 text-xs font-normal text-zinc-500">
+              matching “{query.trim()}”
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-1">
           {(Object.keys(STATUS_LABEL) as TourStatus[]).map((s) => (
@@ -582,7 +706,16 @@ function SidebarBody({
         </select>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {sorted.map((p) => {
+        {groupByComplexInOrder(sorted).flatMap((group) => {
+          const expanded = expandedGroups.has(group.key);
+          const showSiblings = expanded && group.siblings.length > 0;
+          const visible = showSiblings
+            ? [group.primary, ...group.siblings]
+            : [group.primary];
+          return visible.map((p, idx) => {
+            const isPrimary = idx === 0;
+            const isNested = !isPrimary;
+            const siblingCount = group.siblings.length;
           const isDragOver = dragOverId === p.id;
           const isUploading = uploadingId === p.id;
           const isSelected = selectedId === p.id;
@@ -625,6 +758,8 @@ function SidebarBody({
                 void handleDrop(e, p.id);
               }}
               className={`flex gap-3 p-3 border-b border-zinc-800 cursor-pointer transition-colors ${
+                isNested ? "pl-7 bg-zinc-900/40 border-l-2 border-l-zinc-700" : ""
+              } ${
                 isDragOver
                   ? "bg-emerald-900/40 ring-2 ring-emerald-400 ring-inset"
                   : isSelected
@@ -670,6 +805,30 @@ function SidebarBody({
                 )}
               </div>
               <div className="flex-1 min-w-0">
+                {isPrimary && p.complex_name && (
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <div className="text-[10px] font-semibold text-zinc-400 truncate leading-tight tracking-wide uppercase">
+                      {p.complex_name}
+                    </div>
+                    {siblingCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleGroup(group.key);
+                        }}
+                        className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-semibold tracking-wide uppercase text-zinc-300 bg-zinc-800 hover:bg-zinc-700 hover:text-zinc-100 border border-zinc-700 rounded px-1.5 py-[1px] leading-none transition"
+                        title={
+                          expanded
+                            ? `Hide ${siblingCount} other unit${siblingCount === 1 ? "" : "s"}`
+                            : `Show ${siblingCount} more unit${siblingCount === 1 ? "" : "s"}`
+                        }
+                      >
+                        <span>{expanded ? "−" : "+"}{siblingCount}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="text-sm font-medium truncate text-zinc-100">
                   {p.address}
                 </div>
@@ -693,6 +852,17 @@ function SidebarBody({
                     {montroseMins[p.id]} min to {commuteDest.label}
                   </div>
                 )}
+                {p.availability_date && (
+                  <div
+                    className={`text-xs ${
+                      isAvailabilityPast(p.availability_date)
+                        ? "text-emerald-400"
+                        : "text-zinc-500"
+                    }`}
+                  >
+                    Available {formatAvailability(p.availability_date)}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 mt-1">
                   <button
                     type="button"
@@ -712,23 +882,25 @@ function SidebarBody({
                       {"★".repeat(p.star_rating)}
                     </span>
                   )}
-                  <OverlayColorSwatch
-                    lat={p.latitude}
-                    lng={p.longitude}
-                    size={16}
-                    propertyId={p.id}
-                    active={pickingForId === p.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (pickingForId === p.id) onStartPick?.(null);
-                      else onStartPick?.(p.id);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onClearOverride?.(p.id);
-                    }}
-                  />
+                  {!isNested && (
+                    <OverlayColorSwatch
+                      lat={p.latitude}
+                      lng={p.longitude}
+                      size={16}
+                      propertyId={p.id}
+                      active={pickingForId === p.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (pickingForId === p.id) onStartPick?.(null);
+                        else onStartPick?.(p.id);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onClearOverride?.(p.id);
+                      }}
+                    />
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-1.5 items-end self-start">
@@ -747,6 +919,13 @@ function SidebarBody({
                 {(() => {
                   const isFav = favOverride[p.id] ?? p.is_favorite;
                   const isDown = dislikeOverride[p.id] ?? p.is_disliked;
+                  const downReason =
+                    dislikeReasonOverride[p.id] ?? p.dislike_reason ?? "";
+                  const downTitle = isDown
+                    ? downReason
+                      ? `Reason: ${downReason} (click to remove)`
+                      : "Remove downvote"
+                    : "Downvote";
                   return (
                     <>
                       <button
@@ -777,34 +956,62 @@ function SidebarBody({
                           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                         </svg>
                       </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void toggleDislike(p.id, isDown);
-                        }}
-                        className={`leading-none transition ${
-                          isDown
-                            ? "text-orange-400 hover:text-orange-300"
-                            : "text-zinc-600 hover:text-orange-400"
-                        }`}
-                        aria-label={isDown ? "Remove downvote" : "Downvote"}
-                        title={isDown ? "Remove downvote" : "Downvote"}
-                      >
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill={isDown ? "currentColor" : "none"}
-                          stroke="currentColor"
-                          strokeWidth={isDown ? 0 : 2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
+                      <div className="relative">
+                        {editingReasonFor === p.id && (
+                          <input
+                            autoFocus
+                            value={reasonDraft}
+                            onChange={(e) => setReasonDraft(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === "Enter") {
+                                void saveDislikeReason(p.id, downReason);
+                              } else if (e.key === "Escape") {
+                                closeReasonEditor();
+                              }
+                            }}
+                            onBlur={() =>
+                              void saveDislikeReason(p.id, downReason)
+                            }
+                            placeholder="Reason…"
+                            className="absolute right-full top-1/2 -translate-y-1/2 mr-1.5 w-44 bg-zinc-900 border border-orange-400 rounded text-xs px-2 py-1 text-zinc-100 placeholder-zinc-500 focus:outline-none shadow-lg z-30"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void toggleDislike(p.id, isDown, downReason);
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (isDown) openReasonEditor(p.id, downReason);
+                          }}
+                          className={`leading-none transition ${
+                            isDown
+                              ? "text-orange-400 hover:text-orange-300"
+                              : "text-zinc-600 hover:text-orange-400"
+                          }`}
+                          aria-label={downTitle}
+                          title={downTitle}
                         >
-                          <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
-                        </svg>
-                      </button>
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill={isDown ? "currentColor" : "none"}
+                            stroke="currentColor"
+                            strokeWidth={isDown ? 0 : 2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
+                          </svg>
+                        </button>
+                      </div>
                     </>
                   );
                 })()}
@@ -822,6 +1029,7 @@ function SidebarBody({
               </div>
             </div>
           );
+          });
         })}
         {sorted.length === 0 && (
           <div className="p-6 text-sm text-zinc-500 text-center">

@@ -2,8 +2,15 @@
 
 import { useState } from "react";
 import { AddPropertyModal } from "./AddPropertyModal";
+import type { Property } from "@/lib/types/property";
 
-export function AddPropertyButton({ onSaved }: { onSaved: () => void }) {
+export function AddPropertyButton({
+  onSaved,
+  existing,
+}: {
+  onSaved: () => void;
+  existing?: Property[];
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -15,7 +22,11 @@ export function AddPropertyButton({ onSaved }: { onSaved: () => void }) {
         +
       </button>
       {open && (
-        <AddPropertyModal onClose={() => setOpen(false)} onSaved={onSaved} />
+        <AddPropertyModal
+          onClose={() => setOpen(false)}
+          onSaved={onSaved}
+          existing={existing}
+        />
       )}
     </>
   );

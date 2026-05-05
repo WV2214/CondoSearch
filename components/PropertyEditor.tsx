@@ -167,6 +167,15 @@ export function PropertyEditor({ initial }: { initial: Property }) {
 
         <section className="grid grid-cols-2 gap-4">
           <label className="block col-span-2">
+            <span className="text-sm text-zinc-300">Complex / building name</span>
+            <input
+              value={p.complex_name}
+              onChange={(e) => patch({ complex_name: e.target.value })}
+              className={`${inputCls} mt-1`}
+              placeholder="e.g. The Monarch, Westbury Flats"
+            />
+          </label>
+          <label className="block col-span-2">
             <span className="text-sm text-zinc-300">Property type</span>
             <div className="mt-1 flex gap-2">
               {(["condo", "apartment"] as PropertyType[]).map((t) => {

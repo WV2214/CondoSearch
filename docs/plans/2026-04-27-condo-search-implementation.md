@@ -23,7 +23,7 @@ Project URL: https://qzhkwftjsqvwnogrqseb.supabase.co
 
 HOW TO USE THIS PLAN
 
-Tasks are grouped into 5 phases. Within each task, steps are checkboxes — work top to bottom, mark complete as you go. Each task ends with a commit step. Code blocks contain the actual content to paste; do not summarize them. Paths are absolute relative to the project root C:\Users\perry\OneDrive\Desktop\Condo Search.
+Tasks are grouped into 5 phases. Within each task, steps are checkboxes — work top to bottom, mark complete as you go. Each task ends with a commit step. Code blocks contain the actual content to paste; do not summarize them. Paths are absolute relative to the project root C:\Users\perry\OneDrive\Desktop\PROJECTS\CondoSearch.
 
 Manual verification is used for UI tasks per the spec. The scrape parser has unit tests with HTML fixtures because that is the most fragile part of the system.
 
@@ -40,7 +40,7 @@ Files:
 
 Steps:
 
-[ ] Step 1: Open a terminal in C:\Users\perry\OneDrive\Desktop\Condo Search
+[ ] Step 1: Open a terminal in C:\Users\perry\OneDrive\Desktop\PROJECTS\CondoSearch
 
 [ ] Step 2: Run the Next.js scaffolder. From inside the project directory:
 
@@ -98,7 +98,7 @@ Steps:
 
 [ ] Step 1: In the Supabase dashboard, navigate to Project Settings → API Keys. Copy the anon (public) key and the service_role key.
 
-[ ] Step 2: Create C:\Users\perry\OneDrive\Desktop\Condo Search\.env.local with the following content (replace the two placeholder values with the real keys):
+[ ] Step 2: Create C:\Users\perry\OneDrive\Desktop\PROJECTS\CondoSearch\.env.local with the following content (replace the two placeholder values with the real keys):
 
     NEXT_PUBLIC_SUPABASE_URL=https://qzhkwftjsqvwnogrqseb.supabase.co
     NEXT_PUBLIC_SUPABASE_ANON_KEY=<paste anon key here>

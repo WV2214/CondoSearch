@@ -5,6 +5,7 @@ import type { Property, PropertyType, TourStatus } from "@/lib/types/property";
 import { publicPhotoUrl } from "./photo-url";
 import { OverlayColorSwatch } from "./OverlayColorSwatch";
 import { STATUSES, STATUS_LABEL } from "@/lib/status-display";
+import { stripUnitSuffix } from "@/lib/property-helpers";
 
 const inputCls =
   "w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 text-sm";
@@ -14,16 +15,22 @@ const numericInputCls =
 
 interface Props {
   property: Property;
+  siblings?: Property[];
   onClose: () => void;
   onChanged: () => void;
   onDeleted: () => void;
+  onSwitchProperty?: (id: string) => void;
+  onAddUnit?: () => void;
 }
 
 export function PropertyEditModal({
   property,
+  siblings = [],
   onClose,
   onChanged,
   onDeleted,
+  onSwitchProperty,
+  onAddUnit,
 }: Props) {
   const [p, setP] = useState<Property>(property);
   const [uploading, setUploading] = useState(false);
@@ -187,14 +194,33 @@ export function PropertyEditModal({
             </button>
             <button
               type="button"
-              onClick={() => patch({ is_disliked: !p.is_disliked })}
+              onClick={() => {
+                const next = !p.is_disliked;
+                patch(
+                  next
+                    ? { is_disliked: true }
+                    : { is_disliked: false, dislike_reason: "" },
+                );
+              }}
               className={`p-1.5 rounded transition ${
                 p.is_disliked
                   ? "text-orange-400 hover:text-orange-300"
                   : "text-zinc-500 hover:text-orange-400"
               }`}
-              aria-label={p.is_disliked ? "Remove downvote" : "Downvote"}
-              title={p.is_disliked ? "Remove downvote" : "Downvote"}
+              aria-label={
+                p.is_disliked
+                  ? p.dislike_reason
+                    ? `Reason: ${p.dislike_reason} (click to remove)`
+                    : "Remove downvote"
+                  : "Downvote"
+              }
+              title={
+                p.is_disliked
+                  ? p.dislike_reason
+                    ? `Reason: ${p.dislike_reason} (click to remove)`
+                    : "Remove downvote"
+                  : "Downvote"
+              }
             >
               <ThumbsDownIcon filled={p.is_disliked} />
             </button>
@@ -264,6 +290,18 @@ export function PropertyEditModal({
           </div>
 
           <section>
+            <label className="block mb-2">
+              <span className="text-xs text-zinc-400">Complex / building name</span>
+              <input
+                value={p.complex_name}
+                onChange={(e) =>
+                  setP((prev) => ({ ...prev, complex_name: e.target.value }))
+                }
+                onBlur={() => patch({ complex_name: p.complex_name })}
+                className={`${inputCls} mt-1`}
+                placeholder="e.g. The Monarch, Westbury Flats"
+              />
+            </label>
             <label className="block">
               <span className="text-xs text-zinc-400">Address</span>
               <input
@@ -315,6 +353,38 @@ export function PropertyEditModal({
               />
               <span>Crime overlay color sample</span>
             </div>
+            {p.is_disliked && (
+              <label className="block mt-3">
+                <span className="text-xs text-orange-300">
+                  Downvote reason (shown on hover)
+                </span>
+                <input
+                  value={p.dislike_reason}
+                  onChange={(e) =>
+                    setP((prev) => ({ ...prev, dislike_reason: e.target.value }))
+                  }
+                  onBlur={() => patch({ dislike_reason: p.dislike_reason })}
+                  className={`${inputCls} mt-1`}
+                  placeholder="e.g. too far from work, no parking"
+                />
+              </label>
+            )}
+          </section>
+
+          <section>
+            <label className="block">
+              <span className="text-xs text-zinc-400">
+                Available from (optional)
+              </span>
+              <input
+                type="date"
+                value={p.availability_date ?? ""}
+                onChange={(e) =>
+                  patch({ availability_date: e.target.value || null })
+                }
+                className={`${inputCls} mt-1`}
+              />
+            </label>
           </section>
 
           <section className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -525,6 +595,63 @@ export function PropertyEditModal({
                 + Add con
               </button>
             </div>
+          </section>
+
+          <section>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-zinc-400">
+                Units at this address{" "}
+                {siblings.length > 0 && `(${siblings.length + 1})`}
+              </span>
+              {onAddUnit && (
+                <button
+                  type="button"
+                  onClick={onAddUnit}
+                  className="text-xs border border-zinc-700 rounded px-2 py-1 hover:bg-zinc-800 text-zinc-200"
+                  title="Add another unit at this address"
+                >
+                  + Add unit
+                </button>
+              )}
+            </div>
+            {siblings.length === 0 ? (
+              <div className="text-xs text-zinc-500 italic">
+                No other units at {stripUnitSuffix(p.address) || "this address"}.
+                Click &ldquo;+ Add unit&rdquo; to add another.
+              </div>
+            ) : (
+              <ul className="space-y-1">
+                {siblings.map((s) => {
+                  const labelMatch = s.address.match(/\(([^)]*)\)\s*$/);
+                  const unitLabel = labelMatch ? labelMatch[1] : null;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => onSwitchProperty?.(s.id)}
+                        className="w-full text-left flex items-center justify-between gap-2 border border-zinc-800 hover:border-zinc-600 bg-zinc-900/40 hover:bg-zinc-900 rounded px-2 py-1.5 transition"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="text-sm text-zinc-100">
+                            {unitLabel ? `Unit ${unitLabel}` : s.address}
+                          </span>
+                          <span className="block text-xs text-zinc-500 truncate">
+                            {s.price ? `$${s.price.toLocaleString()}` : "—"}
+                            {s.beds != null && ` · ${s.beds}bd`}
+                            {s.baths != null && ` ${s.baths}ba`}
+                            {s.square_feet != null &&
+                              ` · ${s.square_feet.toLocaleString()} sqft`}
+                          </span>
+                        </span>
+                        <span className="text-[10px] text-zinc-500 shrink-0">
+                          edit →
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
 
           <section>

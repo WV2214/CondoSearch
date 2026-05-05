@@ -13,6 +13,8 @@ import { Sidebar, type SortKey } from "./Sidebar";
 import { OverlayEditor } from "./OverlayEditor";
 import { OverlayColorPicker } from "./OverlayColorPicker";
 import { PropertyEditModal } from "./PropertyEditModal";
+import { AddPropertyModal } from "./AddPropertyModal";
+import { findSiblingProperties, stripUnitSuffix } from "@/lib/property-helpers";
 import { clearOverride } from "@/lib/overlay-color-overrides";
 import {
   CRIME_OVERLAY,
@@ -46,6 +48,14 @@ export default function MapView() {
   >(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [hideDisliked, setHideDisliked] = useState(true);
+  const [addUnitPrefill, setAddUnitPrefill] = useState<{
+    address: string;
+    latitude: number;
+    longitude: number;
+    complexName: string;
+    propertyType: "condo" | "apartment";
+  } | null>(null);
   const mapRef = useRef<L.Map | null>(null);
 
   const editingProperty = editingId
@@ -168,6 +178,7 @@ export default function MapView() {
             onMoved={refresh}
             onPinClick={setSelectedId}
             onEdit={setEditingId}
+            hideDisliked={hideDisliked}
           />
         </MapContainer>
         {(pickingProperty || pickFlash) && (
@@ -238,6 +249,12 @@ export default function MapView() {
             >
               Crime overlay: {overlayMode}
             </button>
+            <button
+              onClick={() => setHideDisliked((v) => !v)}
+              className={`text-left hover:text-amber-300 ${hideDisliked ? "text-amber-300" : ""}`}
+            >
+              Disliked pins: {hideDisliked ? "hidden" : "faded"}
+            </button>
             <label className="flex items-center gap-2 text-xs text-zinc-400">
               <span className="shrink-0">Opacity</span>
               <input
@@ -277,7 +294,7 @@ export default function MapView() {
             </div>
           )}
         </div>
-        <AddPropertyButton onSaved={refresh} />
+        <AddPropertyButton onSaved={refresh} existing={properties} />
       </div>
       <Sidebar
         properties={properties}
@@ -296,9 +313,30 @@ export default function MapView() {
       {editingProperty && (
         <PropertyEditModal
           property={editingProperty}
+          siblings={findSiblingProperties(editingProperty, properties)}
           onClose={() => setEditingId(null)}
           onChanged={refresh}
           onDeleted={refresh}
+          onSwitchProperty={(id) => setEditingId(id)}
+          onAddUnit={() => {
+            const base = stripUnitSuffix(editingProperty.address);
+            setAddUnitPrefill({
+              address: base,
+              latitude: editingProperty.latitude,
+              longitude: editingProperty.longitude,
+              complexName: editingProperty.complex_name ?? "",
+              propertyType: editingProperty.property_type,
+            });
+            setEditingId(null);
+          }}
+        />
+      )}
+      {addUnitPrefill && (
+        <AddPropertyModal
+          onClose={() => setAddUnitPrefill(null)}
+          onSaved={refresh}
+          existing={properties}
+          prefill={addUnitPrefill}
         />
       )}
     </div>

@@ -12,7 +12,7 @@ import {
   getOverride,
   subscribeOverrides,
 } from "@/lib/overlay-color-overrides";
-import { hasInUnitLaundry } from "@/lib/property-helpers";
+import { hasInUnitLaundry, dedupeByComplex } from "@/lib/property-helpers";
 import { STATUS_COLOR } from "@/lib/status-display";
 
 const NO_CRIME_COLOR = "#3f3f46";
@@ -69,11 +69,13 @@ export function PropertyPins({
   onMoved,
   onPinClick,
   onEdit,
+  hideDisliked,
 }: {
   properties: Property[];
   onMoved: () => void;
   onPinClick?: (id: string) => void;
   onEdit?: (id: string) => void;
+  hideDisliked?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<
@@ -85,6 +87,55 @@ export function PropertyPins({
   const [dislikeOverride, setDislikeOverride] = useState<
     Record<string, boolean>
   >({});
+  const [dislikeReasonOverride, setDislikeReasonOverride] = useState<
+    Record<string, string>
+  >({});
+  const [editingReasonFor, setEditingReasonFor] = useState<string | null>(null);
+  const [reasonDraft, setReasonDraft] = useState("");
+
+  const openReasonEditor = useCallback(
+    (propertyId: string, currentReason: string) => {
+      setReasonDraft(currentReason);
+      setEditingReasonFor(propertyId);
+    },
+    [],
+  );
+
+  const closeReasonEditor = useCallback(() => {
+    setEditingReasonFor(null);
+    setReasonDraft("");
+  }, []);
+
+  const saveDislikeReason = useCallback(
+    async (propertyId: string, previousReason: string, draft: string) => {
+      const reason = draft.trim();
+      setEditingReasonFor(null);
+      setReasonDraft("");
+      if (reason === previousReason) return;
+      setDislikeReasonOverride((prev) => ({ ...prev, [propertyId]: reason }));
+      try {
+        const res = await fetch(`/api/properties/${propertyId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dislike_reason: reason }),
+        });
+        if (!res.ok) {
+          setDislikeReasonOverride((prev) => ({
+            ...prev,
+            [propertyId]: previousReason,
+          }));
+          return;
+        }
+        onMoved();
+      } catch {
+        setDislikeReasonOverride((prev) => ({
+          ...prev,
+          [propertyId]: previousReason,
+        }));
+      }
+    },
+    [onMoved],
+  );
 
   const toggleFavorite = useCallback(
     async (propertyId: string, current: boolean) => {
@@ -109,14 +160,23 @@ export function PropertyPins({
   );
 
   const toggleDislike = useCallback(
-    async (propertyId: string, current: boolean) => {
+    async (propertyId: string, current: boolean, currentReason: string) => {
       const next = !current;
       setDislikeOverride((prev) => ({ ...prev, [propertyId]: next }));
+      if (next) {
+        openReasonEditor(propertyId, currentReason);
+      } else {
+        setEditingReasonFor((prev) => (prev === propertyId ? null : prev));
+        setDislikeReasonOverride((prev) => ({ ...prev, [propertyId]: "" }));
+      }
       try {
         const res = await fetch(`/api/properties/${propertyId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_disliked: next }),
+          body: JSON.stringify({
+            is_disliked: next,
+            ...(next ? {} : { dislike_reason: "" }),
+          }),
         });
         if (!res.ok) {
           setDislikeOverride((prev) => ({ ...prev, [propertyId]: current }));
@@ -127,7 +187,7 @@ export function PropertyPins({
         setDislikeOverride((prev) => ({ ...prev, [propertyId]: current }));
       }
     },
-    [onMoved],
+    [onMoved, openReasonEditor],
   );
 
   useEffect(() => {
@@ -187,15 +247,26 @@ export function PropertyPins({
     }
   };
 
+  const visibleProperties = dedupeByComplex(properties, (p) => {
+    const fav = favOverride[p.id] ?? p.is_favorite;
+    const dis = dislikeOverride[p.id] ?? p.is_disliked;
+    if (fav) return 0;
+    if (!dis) return 1;
+    return 2;
+  });
+
   return (
     <>
-      {properties.map((p) => {
+      {visibleProperties.map((p) => {
         const isEditing = editingId === p.id;
         const override = overrides[p.id];
         const lat = override?.[0] ?? p.latitude;
         const lng = override?.[1] ?? p.longitude;
         const isFav = favOverride[p.id] ?? p.is_favorite;
         const isDisliked = dislikeOverride[p.id] ?? p.is_disliked;
+        const dislikeReason =
+          dislikeReasonOverride[p.id] ?? p.dislike_reason ?? "";
+        if (hideDisliked && isDisliked) return null;
         return (
           <Marker
             key={p.id}
@@ -227,8 +298,19 @@ export function PropertyPins({
                 isEditing={isEditing}
                 isFavorite={isFav}
                 isDisliked={isDisliked}
+                dislikeReason={dislikeReason}
+                isEditingReason={editingReasonFor === p.id}
+                reasonDraft={reasonDraft}
+                onReasonDraftChange={setReasonDraft}
+                onSaveReason={() =>
+                  saveDislikeReason(p.id, dislikeReason, reasonDraft)
+                }
+                onCloseReason={closeReasonEditor}
+                onOpenReason={() => openReasonEditor(p.id, dislikeReason)}
                 onToggleFavorite={() => toggleFavorite(p.id, isFav)}
-                onToggleDislike={() => toggleDislike(p.id, isDisliked)}
+                onToggleDislike={() =>
+                  toggleDislike(p.id, isDisliked, dislikeReason)
+                }
                 onStartEdit={() => setEditingId(p.id)}
                 onCancelEdit={() => cancelEdit(p.id)}
                 onOpenDetails={() => onEdit?.(p.id)}
@@ -248,6 +330,13 @@ function PopupBody({
   isEditing,
   isFavorite,
   isDisliked,
+  dislikeReason,
+  isEditingReason,
+  reasonDraft,
+  onReasonDraftChange,
+  onSaveReason,
+  onCloseReason,
+  onOpenReason,
   onToggleFavorite,
   onToggleDislike,
   onStartEdit,
@@ -260,6 +349,13 @@ function PopupBody({
   isEditing: boolean;
   isFavorite: boolean;
   isDisliked: boolean;
+  dislikeReason: string;
+  isEditingReason: boolean;
+  reasonDraft: string;
+  onReasonDraftChange: (s: string) => void;
+  onSaveReason: () => void;
+  onCloseReason: () => void;
+  onOpenReason: () => void;
   onToggleFavorite: () => void;
   onToggleDislike: () => void;
   onStartEdit: () => void;
@@ -268,6 +364,11 @@ function PopupBody({
 }) {
   const isApartment = p.property_type === "apartment";
   const wd = hasInUnitLaundry(p.pros);
+  const dislikeLabel = isDisliked
+    ? dislikeReason
+      ? `Reason: ${dislikeReason} (click to remove)`
+      : "Remove downvote"
+    : "Downvote";
   return (
     <div className="space-y-2.5 w-64 text-zinc-100">
       {p.photo_path && (
@@ -287,12 +388,15 @@ function PopupBody({
           <div className="absolute top-1.5 right-1.5 flex gap-1">
             <NativeClickButton
               onClick={onToggleDislike}
+              onContextMenu={() => {
+                if (isDisliked) onOpenReason();
+              }}
               className={`rounded-full p-1 transition bg-zinc-900/70 ${
                 isDisliked
                   ? "text-orange-400 hover:text-orange-300"
                   : "text-zinc-300 hover:text-orange-400"
               }`}
-              ariaLabel={isDisliked ? "Remove downvote" : "Downvote"}
+              ariaLabel={dislikeLabel}
             >
               <ThumbsDownIcon filled={isDisliked} />
             </NativeClickButton>
@@ -333,7 +437,7 @@ function PopupBody({
                   ? "text-orange-400 hover:text-orange-300"
                   : "text-zinc-500 hover:text-orange-400"
               }`}
-              ariaLabel={isDisliked ? "Remove downvote" : "Downvote"}
+              ariaLabel={dislikeLabel}
             >
               <ThumbsDownIcon filled={isDisliked} />
             </NativeClickButton>
@@ -351,6 +455,22 @@ function PopupBody({
           </div>
         )}
       </div>
+      {isEditingReason && (
+        <input
+          autoFocus
+          value={reasonDraft}
+          onChange={(e) => onReasonDraftChange(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") onSaveReason();
+            else if (e.key === "Escape") onCloseReason();
+          }}
+          onBlur={onSaveReason}
+          placeholder="Reason…"
+          className="w-full bg-zinc-900 border border-orange-400 rounded text-xs px-2 py-1 text-zinc-100 placeholder-zinc-500 focus:outline-none"
+        />
+      )}
       <div className="text-sm text-zinc-300">
         {p.price ? `$${p.price.toLocaleString()}/mo` : "Price unknown"}
         {p.beds != null && ` · ${p.beds}bd`}
@@ -427,23 +547,33 @@ function PopupBody({
 
 function NativeClickButton({
   onClick,
+  onContextMenu,
   ariaLabel,
   className,
   children,
 }: {
   onClick: () => void;
+  onContextMenu?: () => void;
   ariaLabel: string;
   className?: string;
   children: React.ReactNode;
 }) {
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
+  const onContextRef = useRef(onContextMenu);
+  onContextRef.current = onContextMenu;
   const setRef = useCallback((el: HTMLButtonElement | null) => {
     if (!el) return;
     el.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
       onClickRef.current();
+    };
+    el.oncontextmenu = (e) => {
+      if (!onContextRef.current) return;
+      e.stopPropagation();
+      e.preventDefault();
+      onContextRef.current();
     };
   }, []);
   return (

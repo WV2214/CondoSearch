@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import type { PropertyType } from "@/lib/types/property";
+import type { Property, PropertyType } from "@/lib/types/property";
+import { findExistingMatch, stripUnitSuffix } from "@/lib/property-helpers";
 
 const ManualGeoPicker = dynamic(() => import("./ManualGeoPicker"), {
   ssr: false,
@@ -40,35 +41,84 @@ interface GeocodeResp {
 const inputCls =
   "w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500";
 
+const unitInputCls =
+  "w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500";
+
+interface Unit {
+  label: string;
+  price: string;
+  sqft: string;
+  beds: string;
+  baths: string;
+  url: string;
+  availability: string;
+}
+
+const emptyUnit = (): Unit => ({
+  label: "",
+  price: "",
+  sqft: "",
+  beds: "",
+  baths: "",
+  url: "",
+  availability: "",
+});
+
+interface PrefillData {
+  address: string;
+  latitude: number;
+  longitude: number;
+  complexName?: string;
+  propertyType?: PropertyType;
+}
+
 export function AddPropertyModal({
   onClose,
   onSaved,
+  existing,
+  prefill,
 }: {
   onClose: () => void;
   onSaved: () => void;
+  existing?: Property[];
+  prefill?: PrefillData;
 }) {
-  const [step, setStep] = useState<"url" | "review">("url");
+  const [step, setStep] = useState<"url" | "review">(
+    prefill ? "review" : "url",
+  );
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(
+    prefill
+      ? `Adding another unit at ${prefill.address}. Fill in the unit-specific fields below.`
+      : null,
+  );
   const [data, setData] = useState<ScrapeResp | null>(null);
-  const [address, setAddress] = useState("");
-  const [price, setPrice] = useState<string>("");
-  const [beds, setBeds] = useState<string>("");
-  const [baths, setBaths] = useState<string>("");
-  const [sqft, setSqft] = useState<string>("");
-  const [lat, setLat] = useState<string>("");
-  const [lng, setLng] = useState<string>("");
-  const [listingUrls, setListingUrls] = useState<string[]>([""]);
+  const [address, setAddress] = useState(prefill?.address ?? "");
+  const [complexName, setComplexName] = useState(prefill?.complexName ?? "");
+  const [lat, setLat] = useState<string>(
+    prefill ? String(prefill.latitude) : "",
+  );
+  const [lng, setLng] = useState<string>(
+    prefill ? String(prefill.longitude) : "",
+  );
+  const [units, setUnits] = useState<Unit[]>([emptyUnit()]);
+  const [saveProgress, setSaveProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
   const [amenities, setAmenities] = useState<string[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<Set<string>>(
     new Set(),
   );
-  const [propertyType, setPropertyType] = useState<PropertyType>("condo");
+  const [propertyType, setPropertyType] = useState<PropertyType>(
+    prefill?.propertyType ?? "condo",
+  );
+  const [dupPrompt, setDupPrompt] = useState<{ match: Property } | null>(null);
 
   const safeJson = async (res: Response): Promise<Record<string, unknown>> => {
     const text = await res.text();
@@ -99,13 +149,19 @@ export function AddPropertyModal({
       const d = (await safeJson(res)) as unknown as ScrapeResp;
       setData(d);
       setAddress(d.scraped.address ?? "");
-      setPrice(d.scraped.price?.toString() ?? "");
-      setBeds(d.scraped.beds?.toString() ?? "");
-      setBaths(d.scraped.baths?.toString() ?? "");
-      setSqft(d.scraped.square_feet?.toString() ?? "");
       setLat(d.latitude?.toString() ?? "");
       setLng(d.longitude?.toString() ?? "");
-      if (url.trim()) setListingUrls([url.trim()]);
+      setUnits([
+        {
+          label: "",
+          price: d.scraped.price?.toString() ?? "",
+          sqft: d.scraped.square_feet?.toString() ?? "",
+          beds: d.scraped.beds?.toString() ?? "",
+          baths: d.scraped.baths?.toString() ?? "",
+          url: url.trim(),
+          availability: "",
+        },
+      ]);
 
       const allNull =
         !d.scraped.address &&
@@ -155,10 +211,18 @@ export function AddPropertyModal({
         amenities?: string[];
       };
       if (x.address) setAddress(x.address);
-      if (x.price != null) setPrice(String(x.price));
-      if (x.beds != null) setBeds(String(x.beds));
-      if (x.baths != null) setBaths(String(x.baths));
-      if (x.square_feet != null) setSqft(String(x.square_feet));
+      setUnits((prev) => {
+        const first = prev[0] ?? emptyUnit();
+        const next: Unit = {
+          ...first,
+          price: x.price != null ? String(x.price) : first.price,
+          sqft:
+            x.square_feet != null ? String(x.square_feet) : first.sqft,
+          beds: x.beds != null ? String(x.beds) : first.beds,
+          baths: x.baths != null ? String(x.baths) : first.baths,
+        };
+        return [next, ...prev.slice(1)];
+      });
       const found = Array.isArray(x.amenities) ? x.amenities : [];
       setAmenities(found);
       setSelectedAmenities(new Set(found));
@@ -281,46 +345,103 @@ export function AddPropertyModal({
       setError("Address and a valid lat/lng are required");
       return;
     }
-    const cleanedUrls = listingUrls.map((u) => u.trim()).filter(Boolean);
-    const invalidUrl = cleanedUrls.find((u) => {
-      try {
-        new URL(u);
-        return false;
-      } catch {
-        return true;
-      }
-    });
-    if (invalidUrl) {
-      setError(`Not a valid URL: ${invalidUrl}`);
+    const cleanUnits = units.filter(
+      (u) =>
+        u.label.trim() ||
+        u.price.trim() ||
+        u.sqft.trim() ||
+        u.beds.trim() ||
+        u.baths.trim() ||
+        u.url.trim() ||
+        u.availability.trim(),
+    );
+    if (cleanUnits.length === 0) {
+      setError("Add at least one unit with price/sqft/beds/baths.");
       return;
     }
+    for (const u of cleanUnits) {
+      const url = u.url.trim();
+      if (url) {
+        try {
+          new URL(url);
+        } catch {
+          setError(`Not a valid URL: ${url}`);
+          return;
+        }
+      }
+    }
+    if (!prefill && existing && existing.length > 0) {
+      const baseAddr = stripUnitSuffix(address);
+      const match = findExistingMatch(
+        { address: baseAddr, latitude: latN, longitude: lngN },
+        existing,
+      );
+      if (match) {
+        setDupPrompt({ match });
+        return;
+      }
+    }
+    void doSave({ baseAddress: address, latitude: latN, longitude: lngN, units: cleanUnits, nestUnder: null });
+  };
+
+  const doSave = async ({
+    baseAddress,
+    latitude,
+    longitude,
+    units: cleanUnits,
+    nestUnder,
+  }: {
+    baseAddress: string;
+    latitude: number;
+    longitude: number;
+    units: Unit[];
+    nestUnder: Property | null;
+  }) => {
+    setDupPrompt(null);
     setBusy(true);
+    setError(null);
     try {
       const prosFromAmenities = amenities.filter((a) =>
         selectedAmenities.has(a),
       );
-      const res = await fetch("/api/properties", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          listing_urls: cleanedUrls,
-          address,
-          latitude: latN,
-          longitude: lngN,
-          price: price ? parseInt(price, 10) : null,
-          beds: beds ? parseInt(beds, 10) : null,
-          baths: baths ? parseFloat(baths) : null,
-          square_feet: sqft ? parseInt(sqft, 10) : null,
-          photo_path: null,
-          photo_source_url: data?.scraped.photo_url ?? null,
-          property_type: propertyType,
-          ...(prosFromAmenities.length > 0
-            ? { pros: prosFromAmenities }
-            : {}),
-        }),
-      });
-      if (!res.ok) {
-        throw new Error((await res.json()).error ?? "save failed");
+      const effectiveComplex =
+        nestUnder?.complex_name?.trim() || complexName.trim();
+      for (let i = 0; i < cleanUnits.length; i++) {
+        const u = cleanUnits[i];
+        setSaveProgress({ current: i + 1, total: cleanUnits.length });
+        const unitAddress = u.label.trim()
+          ? `${baseAddress} (${u.label.trim()})`
+          : baseAddress;
+        const unitUrl = u.url.trim();
+        const res = await fetch("/api/properties", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listing_urls: unitUrl ? [unitUrl] : [],
+            address: unitAddress,
+            latitude,
+            longitude,
+            price: u.price ? parseInt(u.price, 10) : null,
+            beds: u.beds ? parseInt(u.beds, 10) : null,
+            baths: u.baths ? parseFloat(u.baths) : null,
+            square_feet: u.sqft ? parseInt(u.sqft, 10) : null,
+            photo_path: null,
+            photo_source_url: data?.scraped.photo_url ?? null,
+            property_type: propertyType,
+            ...(effectiveComplex ? { complex_name: effectiveComplex } : {}),
+            ...(u.availability.trim()
+              ? { availability_date: u.availability.trim() }
+              : {}),
+            ...(prosFromAmenities.length > 0
+              ? { pros: prosFromAmenities }
+              : {}),
+          }),
+        });
+        if (!res.ok) {
+          throw new Error(
+            (await safeJson(res)).error as string ?? "save failed",
+          );
+        }
       }
       onSaved();
       onClose();
@@ -328,14 +449,49 @@ export function AddPropertyModal({
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setSaveProgress(null);
     }
   };
+
+  const confirmNest = (mode: "nest" | "separate") => {
+    if (!dupPrompt) return;
+    const latN = parseFloat(lat);
+    const lngN = parseFloat(lng);
+    const cleanUnits = units.filter(
+      (u) =>
+        u.label.trim() ||
+        u.price.trim() ||
+        u.sqft.trim() ||
+        u.beds.trim() ||
+        u.baths.trim() ||
+        u.url.trim() ||
+        u.availability.trim(),
+    );
+    void doSave({
+      baseAddress: address,
+      latitude: latN,
+      longitude: lngN,
+      units: cleanUnits,
+      nestUnder: mode === "nest" ? dupPrompt.match : null,
+    });
+  };
+
+  const updateUnit = (i: number, patch: Partial<Unit>) => {
+    setUnits((prev) => prev.map((u, j) => (j === i ? { ...u, ...patch } : u)));
+  };
+  const addUnit = () => setUnits((prev) => [...prev, emptyUnit()]);
+  const removeUnit = (i: number) =>
+    setUnits((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, j) => j !== i),
+    );
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[2000] p-4">
       <div className="bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-lg max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex justify-between items-center">
-          <h2 className="text-xl font-semibold">Add property</h2>
+          <h2 className="text-xl font-semibold">
+            {prefill ? "Add unit" : "Add property"}
+          </h2>
           <button
             onClick={onClose}
             className="text-zinc-500 hover:text-zinc-200"
@@ -343,6 +499,50 @@ export function AddPropertyModal({
             ✕
           </button>
         </div>
+        {dupPrompt && (
+          <div className="bg-amber-950/40 border border-amber-700 rounded px-3 py-3 space-y-2">
+            <div className="text-sm text-amber-200">
+              An entry already exists at this address:
+            </div>
+            <div className="text-sm text-zinc-100">
+              <span className="font-medium">{dupPrompt.match.address}</span>
+              {dupPrompt.match.complex_name && (
+                <span className="text-zinc-400">
+                  {" "}— {dupPrompt.match.complex_name}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-zinc-400">
+              Nest these as additional units of the same building so they group
+              together?
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => confirmNest("nest")}
+                className="bg-amber-300 text-zinc-900 rounded px-3 py-1.5 text-sm font-medium hover:bg-amber-200"
+              >
+                {dupPrompt.match.complex_name
+                  ? `Nest under "${dupPrompt.match.complex_name}"`
+                  : "Nest with existing"}
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmNest("separate")}
+                className="border border-zinc-700 rounded px-3 py-1.5 text-sm hover:bg-zinc-800"
+              >
+                Save as separate property
+              </button>
+              <button
+                type="button"
+                onClick={() => setDupPrompt(null)}
+                className="border border-zinc-800 text-zinc-400 rounded px-3 py-1.5 text-sm hover:text-zinc-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {error && (
           <div className="text-red-300 text-sm bg-red-950/40 border border-red-900 rounded px-3 py-2">
             {error}
@@ -372,7 +572,15 @@ export function AddPropertyModal({
               </button>
               <button
                 onClick={() => {
-                  if (url.trim()) setListingUrls([url.trim()]);
+                  if (url.trim()) {
+                    setUnits((prev) => {
+                      const first = prev[0] ?? emptyUnit();
+                      return [
+                        { ...first, url: url.trim() },
+                        ...prev.slice(1),
+                      ];
+                    });
+                  }
                   setStep("review");
                 }}
                 className="flex-1 border border-zinc-700 rounded py-2 hover:bg-zinc-800"
@@ -420,6 +628,14 @@ export function AddPropertyModal({
                 pin to set the property location before saving.
               </div>
             )}
+            <Field label="Complex / building name (optional)">
+              <input
+                value={complexName}
+                onChange={(e) => setComplexName(e.target.value)}
+                placeholder="e.g. The Monarch, Westbury Flats"
+                className={inputCls}
+              />
+            </Field>
             <Field label="Address">
               <div className="flex gap-2">
                 <input
@@ -489,36 +705,110 @@ export function AddPropertyModal({
                 })}
               </div>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Price ($/mo)">
-                <input
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Sq ft">
-                <input
-                  value={sqft}
-                  onChange={(e) => setSqft(e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Beds">
-                <input
-                  value={beds}
-                  onChange={(e) => setBeds(e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Baths">
-                <input
-                  value={baths}
-                  onChange={(e) => setBaths(e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-            </div>
+            <Field
+              label={`Units (${units.length})`}
+            >
+              <div className="space-y-2">
+                {units.map((u, i) => (
+                  <div
+                    key={i}
+                    className="border border-zinc-800 rounded p-3 bg-zinc-900/40 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-zinc-500">
+                        Unit {i + 1}
+                      </span>
+                      {units.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeUnit(i)}
+                          className="text-xs text-zinc-500 hover:text-zinc-200"
+                          aria-label="Remove unit"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      value={u.label}
+                      placeholder="Unit label (optional, e.g. 1210 or A5 DEN)"
+                      onChange={(e) =>
+                        updateUnit(i, { label: e.target.value })
+                      }
+                      className={unitInputCls}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        value={u.price}
+                        placeholder="Price ($/mo)"
+                        inputMode="numeric"
+                        onChange={(e) =>
+                          updateUnit(i, { price: e.target.value })
+                        }
+                        className={unitInputCls}
+                      />
+                      <input
+                        value={u.sqft}
+                        placeholder="Sq ft"
+                        inputMode="numeric"
+                        onChange={(e) =>
+                          updateUnit(i, { sqft: e.target.value })
+                        }
+                        className={unitInputCls}
+                      />
+                      <input
+                        value={u.beds}
+                        placeholder="Beds"
+                        inputMode="numeric"
+                        onChange={(e) =>
+                          updateUnit(i, { beds: e.target.value })
+                        }
+                        className={unitInputCls}
+                      />
+                      <input
+                        value={u.baths}
+                        placeholder="Baths"
+                        inputMode="decimal"
+                        onChange={(e) =>
+                          updateUnit(i, { baths: e.target.value })
+                        }
+                        className={unitInputCls}
+                      />
+                    </div>
+                    <input
+                      value={u.url}
+                      placeholder="Listing URL (optional)"
+                      onChange={(e) => updateUnit(i, { url: e.target.value })}
+                      className={unitInputCls}
+                    />
+                    <label className="block">
+                      <span className="text-[11px] text-zinc-500">
+                        Available from (optional)
+                      </span>
+                      <input
+                        type="date"
+                        value={u.availability}
+                        onChange={(e) =>
+                          updateUnit(i, { availability: e.target.value })
+                        }
+                        className={`${unitInputCls} mt-0.5`}
+                      />
+                    </label>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addUnit}
+                  className="w-full text-sm border border-dashed border-zinc-700 rounded py-2 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800/40"
+                >
+                  + Add another unit
+                </button>
+                <div className="text-xs text-zinc-500">
+                  Each unit becomes its own property entry sharing this address
+                  and location.
+                </div>
+              </div>
+            </Field>
             {amenities.length > 0 && (
               <Field label={`Detected features (${amenities.length})`}>
                 <div className="space-y-1 bg-zinc-800/40 border border-zinc-700 rounded p-2">
@@ -552,44 +842,6 @@ export function AddPropertyModal({
                 </div>
               </Field>
             )}
-            <Field label="Listing URLs (optional)">
-              <div className="space-y-2">
-                {listingUrls.map((u, i) => (
-                  <div key={i} className="flex gap-2">
-                    <input
-                      value={u}
-                      placeholder="https://..."
-                      onChange={(e) => {
-                        const next = [...listingUrls];
-                        next[i] = e.target.value;
-                        setListingUrls(next);
-                      }}
-                      className={inputCls}
-                    />
-                    {listingUrls.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setListingUrls(
-                            listingUrls.filter((_, j) => j !== i),
-                          )
-                        }
-                        className="shrink-0 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setListingUrls([...listingUrls, ""])}
-                  className="text-sm border border-zinc-700 rounded px-3 py-1 text-zinc-300 hover:bg-zinc-800"
-                >
-                  + Add another URL
-                </button>
-              </div>
-            </Field>
             <ManualGeoPicker
               lat={parseFloat(lat) || 29.76}
               lng={parseFloat(lng) || -95.37}
@@ -603,7 +855,13 @@ export function AddPropertyModal({
               disabled={busy}
               className="w-full bg-zinc-100 text-zinc-900 rounded py-2 font-medium disabled:opacity-50 hover:bg-white"
             >
-              {busy ? "Saving..." : "Save property"}
+              {busy
+                ? saveProgress
+                  ? `Saving unit ${saveProgress.current} of ${saveProgress.total}...`
+                  : "Saving..."
+                : units.length > 1
+                  ? `Save ${units.length} units`
+                  : "Save property"}
             </button>
           </div>
         )}
